@@ -1,0 +1,15 @@
+{
+  "name": "agent-collab",
+  "description": "Private team workflow plugins",
+  "owner": {
+    "name": "Medcare Team"
+  },
+  "plugins": [
+    {
+      "name": "agent-collab",
+      "source": "./",
+      "version": "0.1.0",
+      "description": "Shared project collaboration workflow for the team"
+    }
+  ]
+}

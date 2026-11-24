@@ -1,0 +1,14 @@
+{
+  "name": "agent-collab",
+  "version": "0.1.0",
+  "description": "Process communication, decision boundaries, and evidence-based acceptance for agent-assisted projects",
+  "author": {
+    "name": "Medcare Team"
+  },
+  "keywords": [
+    "collaboration",
+    "workflow",
+    "acceptance",
+    "decision-boundaries"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "task_id": "AC-001",
+  "goal_ref": "docs/project-goal.md",
+  "goal": "Deliver the confirmed project workflow with repeatable verification",
+  "scope": [
+    "src/",
+    "tests/"
+  ],
+  "non_goals": [
+    "Deployment to shared environments"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-TECH-1",
+      "statement": "The automated regression suite passes",
+      "kind": "technical",
+      "command": "python3 -m unittest discover -s tests -v",
+      "expected": "Exit code 0 with a non-zero test count",
+      "owner": "coordinator"
+    },
+    {
+      "id": "AC-BIZ-1",
+      "statement": "The user can complete the agreed business workflow",
+      "kind": "business",
+      "expected": "The user confirms the walkthrough and evidence",
+      "owner": "user"
+    }
+  ],
+  "decision_boundaries": {
+    "autonomous": [
+      "Reversible implementation choices inside src/ and tests/"
+    ],
+    "requires_user": [
+      "Scope, external contract, deployment, commit, and push changes"
+    ]
+  },
+  "dependencies": [],
+  "risks": [
+    "Business acceptance remains pending until the user walkthrough"
+  ],
+  "status": "confirmed"
+}

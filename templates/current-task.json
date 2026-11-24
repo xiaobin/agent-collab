@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "task_id": "",
+  "goal_ref": "",
+  "goal": "",
+  "scope": [],
+  "non_goals": [],
+  "acceptance": [],
+  "decision_boundaries": {
+    "autonomous": [],
+    "requires_user": []
+  },
+  "dependencies": [],
+  "risks": [],
+  "status": "draft"
+}
