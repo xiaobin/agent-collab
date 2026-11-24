@@ -7,6 +7,8 @@ description: 用于启动、推进、恢复或验收 agent 参与的项目任务
 
 把沟通落实为可恢复的目标、边界、行动和证据，不以“已说过”“测试通过”或 agent 自述代替完成。
 
+本文 `<skill_dir>` 指本 Skill 所在目录：Claude Code 中为 `${CLAUDE_PLUGIN_ROOT}/skills/project-collaboration`；Pi 和 Codex 使用各自加载技能时显示的绝对路径。下列命令从项目根目录运行，任务卡和证据路径相对项目根目录解析。
+
 ## 1. 启动或恢复
 
 1. 找目标权威来源：当前用户指令、PRD、Issue 或已确认任务卡。聊天记录和 memory 只作背景，不能覆盖更新的用户指令。
@@ -20,7 +22,7 @@ description: 用于启动、推进、恢复或验收 agent 参与的项目任务
 5. 开工前运行：
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate_task.py" .herdr/current-task.json --phase dispatch
+   sh "<skill_dir>/scripts/validate-task.sh" .herdr/current-task.json --phase dispatch
    ```
 
    简单任务可不建状态文件；复杂任务必须让范围可逐项核对。
@@ -95,6 +97,6 @@ description: 用于启动、推进、恢复或验收 agent 参与的项目任务
 
 更新 `.herdr/PROGRESS.md`，至少写清当前阶段、已验证覆盖、下一动作、需要用户事项、在飞任务、占用资源和恢复第一条命令。状态文件只记运行事实，不复制完整通用流程。
 
-收尾时释放本次创建且不再需要的资源，保留失败证据和审查记录。只把可迁移且有证据的教训回流到项目文档或公共 Plugin；一次性事实不写成永久规则。
+收尾时释放本次创建且不再需要的资源，保留失败证据和审查记录。只把可迁移且有证据的教训回流到项目文档或公共包；一次性事实不写成永久规则。
 
 详见 [状态与交接](references/handoff.md)。

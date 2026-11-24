@@ -1,8 +1,12 @@
 # Project Agent Entry
 
-本文件只保存项目事实与项目特例。通用目标对齐、过程沟通、决策边界、状态恢复和验收流程统一使用已安装的 `agent-collab` Plugin，不在本文件复制公共 Skill。
+本文件只保存项目事实与项目特例。通用目标对齐、过程沟通、决策边界、状态恢复和验收流程统一使用已安装的 `agent-collab` 公共包，不在本文件复制公共 Skill。
 
-开始、恢复或验收项目任务时，使用 `/agent-collab:project-collaboration`。
+开始、恢复或验收项目任务时，按当前工具调用：
+
+- Claude Code：`/agent-collab:project-collaboration`
+- Pi：`/skill:project-collaboration`
+- Codex：`$agent-collab:project-collaboration`
 
 ## 目标权威来源
 

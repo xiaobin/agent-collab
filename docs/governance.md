@@ -2,7 +2,9 @@
 
 ## 单一正本
 
-`agent-collab` 是你和团队公共协作流程的唯一正本。团队成员通过内部 marketplace 安装发布版本，不在各项目复制、改写公共 Skill。项目可增加更严格的规则，但不能自行削弱公共安全、权限和验收要求。
+`agent-collab` 是你和团队公共协作流程的唯一正本。团队成员通过同一 release 的 Claude Code marketplace、Pi package 或 Codex marketplace 安装，不在各项目复制、改写公共 Skill。项目可增加更严格的规则，但不能自行削弱公共安全、权限和验收要求。
+
+安装范围和是否固定版本属于用户的决策。agent 可以检查现状和解释差异，但必须在写入 marketplace、安装或更新前取得用户对范围（Claude Code 的 `user`/`project`/`local`、Pi 的用户级/项目级、Codex 仅用户级是否同意）和版本的明确确认，不得预设或替用户选择。
 
 ## 变更审批
 
@@ -32,14 +34,14 @@
 - MINOR：向后兼容的新流程、模板或校验能力；
 - PATCH：澄清、错误修复和测试增强。
 
-`plugin.json` 与 marketplace entry 的版本必须一致。每次发布更新 `CHANGELOG.md`，说明行为变化、迁移动作和是否影响任务卡。
+`.claude-plugin/plugin.json`、`.claude-plugin/marketplace.json`、`.codex-plugin/plugin.json` 与 Pi `package.json` 的名称和版本必须一致。每次发布更新 `CHANGELOG.md`，说明行为变化、迁移动作和是否影响任务卡。
 
 ## 发布检查
 
 1. 工作树只包含本次发布范围。
 2. `./scripts/verify.sh` 全部通过。
 3. 检查公共契约变化是否已有用户确认。
-4. 检查文档、模板、脚本引用和版本一致。
+4. 检查文档、模板、脚本引用、三端 manifest 和版本一致，并运行 `./scripts/verify_pi.sh` 与 `./scripts/verify_codex.sh` 的隔离实装验证。
 5. 更新 CHANGELOG，并评估现有项目升级是否需要迁移。
 6. 仅在获得提交、推送或发布授权后创建相应 commit、推送和 release tag。
 

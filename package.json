@@ -1,0 +1,18 @@
+{
+  "name": "agent-collab",
+  "version": "0.3.0",
+  "description": "Shared project collaboration workflow for Claude Code, Pi, and Codex",
+  "private": true,
+  "keywords": [
+    "pi-package",
+    "agent-skills",
+    "collaboration",
+    "acceptance",
+    "agent-evaluation"
+  ],
+  "pi": {
+    "skills": [
+      "./skills/project-collaboration"
+    ]
+  }
+}

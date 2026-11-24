@@ -1,0 +1,35 @@
+{
+  "name": "agent-collab",
+  "version": "0.3.0",
+  "description": "Team-maintained project collaboration workflow for goal alignment, communication, human decision boundaries, recovery, and evidence-based acceptance.",
+  "author": {
+    "name": "Medcare Team"
+  },
+  "homepage": "https://github.com/xiaobin/agent-collab",
+  "repository": "https://github.com/xiaobin/agent-collab",
+  "keywords": [
+    "project-collaboration",
+    "goal-alignment",
+    "agent-evaluation",
+    "workflow",
+    "team"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Agent Collab",
+    "shortDescription": "Team-wide goal, handoff, acceptance, and agent evaluation workflow",
+    "longDescription": "One authoritative, versioned workflow for goal confirmation, communication, human decision boundaries, recovery, evidence-based acceptance, and agent evaluation across Claude Code, Pi, and Codex.",
+    "developerName": "Medcare Team",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/xiaobin/agent-collab",
+    "defaultPrompt": [
+      "Use project-collaboration to confirm this task's goal, scope, and acceptance before starting.",
+      "Use project-collaboration to recover the current task state and report the next action.",
+      "Use project-collaboration to verify this delivery against its evidence and business acceptance."
+    ]
+  }
+}

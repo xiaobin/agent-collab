@@ -20,7 +20,7 @@ Agent 永远不自证。脚本只检查记录结构、门禁取值和确定性�
 - `check` 只能校验单条记录的 `correction_of` 类型和自指；目标存在、成环、重复 correction 与身份一致性依赖完整历史，由 `rollup` 校验。追加 correction 前，先把现有 JSONL 与候选记录合并到临时文件跑一次 `rollup` 预检，通过后再追加。
 - correction 只更正判断内容，不修复记录结构。已写入的结构非法记录（例如 `fail` 却没有 findings）不能靠追加 correction 绕过：`rollup` 会继续拒绝整份历史。此时停止汇总、保留现场和证据，由用户授权后按受控修复流程处理（备份原文件、定位非法行、在独立副本中修正并记录原因）；不得静默改写或删除主账本。
 - 汇总前先解析 correction 链，只统计每条链最新的记录；被替代的记录不进入分组或样本，数量记入顶层 `corrected_record_count`。
-- Plugin 安装和升级只处理公共文件，不得清空、重建或覆盖项目的评估历史、原始日志和证据。
+- 公共包安装和升级只处理公共文件，不得清空、重建或覆盖项目的评估历史、原始日志和证据。
 - 画像（rollup 输出、缓存的统计结果）是派生工件。派生工件可以重建，原始记录和证据才是权威；两者冲突时以原始记录为准。
 - 评估记录是否纳入 Git 由项目决定；证据文件通常放仓库外临时路径，记录引用其路径和摘要。
 
@@ -117,20 +117,20 @@ Agent 永远不自证。脚本只检查记录结构、门禁取值和确定性�
 
 一个任务在给出最终判决时，再写一条 `stage: "final"` 记录，引用同一批证据和最终门禁状态。Attempt 记录保留，用于看返工；汇总只统计 `final` 记录，避免同一 Attempt 被重复计数。
 
-最终 `SUCCEEDED` 前必须在 Plugin 上下文中运行：
+最终 `SUCCEEDED` 前必须在项目根目录运行：
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_eval.py" check <record.json> --final
+sh "<skill_dir>/scripts/agent-eval.sh" check <record.json> --final
 ```
 
-`<record.json>` 是本次最终记录的单文件路径，不是整个 jsonl；`--final` 要求记录本身为 `stage: "final"`，并同时校验最终证据。对 Attempt 记录使用 `--final` 会返回记录错误（exit 2），不会被当成最终记录放行。`${CLAUDE_PLUGIN_ROOT}` 只在 Plugin 组件上下文（例如 Skill 加载时的 Markdown 替换）中有效；脱离 Plugin、在普通终端直接执行时，必须替换为 Plugin 的实际安装绝对路径，不能假定该变量已导出。
+`<record.json>` 是本次最终记录的单文件路径，不是整个 jsonl；`--final` 要求记录本身为 `stage: "final"`，并同时校验最终证据。对 Attempt 记录使用 `--final` 会返回记录错误（exit 2），不会被当成最终记录放行。`<skill_dir>` 在 Claude Code 中为 `${CLAUDE_PLUGIN_ROOT}/skills/project-collaboration`，在 Pi 中为技能加载时显示的绝对路径；普通终端中也要替换为实际安装路径，不能保留占位符或假定 `${CLAUDE_PLUGIN_ROOT}` 已导出。
 
 `check` 通过只说明记录结构和确定性门禁成立，不证明引用的文件真实或业务已验收。
 
 ### 汇总画像
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_eval.py" rollup .herdr/agent-evaluations.jsonl --min-samples 3
+sh "<skill_dir>/scripts/agent-eval.sh" rollup .herdr/agent-evaluations.jsonl --min-samples 3
 ```
 
 - 汇总前先解析 `correction_of` 链：只统计每条链最新的记录，被替代记录计入顶层 `corrected_record_count`，不进入分组或样本。`evaluation_id` 在输入中仍必须唯一。

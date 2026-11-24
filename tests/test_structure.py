@@ -103,18 +103,63 @@ class PluginStructureTest(unittest.TestCase):
             },
         )
 
-    def test_docs_run_validation_inside_plugin_context(self):
-        for relative_path in ("README.md", "docs/adoption.md"):
+    def assert_self_install_prompt(self, block, required_text):
+        confirmation = "开始前先向我确认，不要自行假定"
+        self.assertIn(confirmation, block)
+        self.assertLess(block.index(confirmation), block.index("按顺序执行"))
+        self.assertNotIn("安装范围：user", block)
+        self.assertNotIn("期望版本：", block)
+        self.assertNotRegex(block, r"--scope\s+user\b")
+        self.assertNotRegex(block, r"@v\d+\.\d+\.\d+")
+        self.assertNotRegex(block, r"--ref\s+v\d+\.\d+\.\d+")
+        self.assertIn("python3 --version", block)
+        for text in required_text:
+            self.assertIn(text, block)
+
+    def test_self_install_prompts_require_scope_confirmation(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        section = readme[readme.index("## 让 agent 自行安装"):readme.index("## 接入项目")]
+        blocks = re.findall(r"```text\n(.*?)```", section, re.DOTALL)
+        self.assertEqual(len(blocks), 3)
+        requirements = [
+            ("<确认的范围>", "user、project 或 local"),
+            ("<确认的 tag>", "用户级，还是项目级"),
+            ("<确认的 tag>", "只支持用户级"),
+        ]
+        for block, required_text in zip(blocks, requirements):
+            with self.subTest(required_text=required_text):
+                self.assert_self_install_prompt(block, required_text)
+                with self.assertRaises(AssertionError):
+                    self.assert_self_install_prompt(
+                        block.replace("开始前先向我确认，不要自行假定", ""), required_text
+                    )
+                hardcoded = block.replace("<确认的范围>", "user").replace(
+                    "<确认的 tag>", "v0.3.0"
+                )
+                with self.assertRaises(AssertionError):
+                    self.assert_self_install_prompt(hardcoded, required_text)
+
+    def test_docs_run_validation_with_runtime_specific_skill_paths(self):
+        claude_command = "${CLAUDE_PLUGIN_ROOT}/skills/project-collaboration/scripts/validate-task.sh"
+        shared_command = "<skill_dir>/scripts/validate-task.sh"
+        for relative_path, heading in (("README.md", "## 接入项目"), ("docs/adoption.md", "## 新项目")):
             text = (ROOT / relative_path).read_text(encoding="utf-8")
-            self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/validate_task.py", text, relative_path)
-            self.assertIn("Plugin 流程", text, relative_path)
-            self.assertIn("普通终端", text, relative_path)
-            self.assertIn("实际安装绝对路径", text, relative_path)
-            self.assertLess(
-                text.index("/agent-collab:project-collaboration"),
-                text.index("${CLAUDE_PLUGIN_ROOT}/scripts/validate_task.py"),
-                f"{relative_path} 应先引导加载 Plugin 再执行校验命令",
-            )
+            section = text[text.index(heading):]
+            self.assertIn(claude_command, section, relative_path)
+            self.assertIn(shared_command, section, relative_path)
+            self.assertIn("Plugin 流程", section, relative_path)
+            self.assertIn("普通终端", section, relative_path)
+            self.assertIn("实际安装绝对路径", section, relative_path)
+            for entrypoint, command in (
+                ("/agent-collab:project-collaboration", claude_command),
+                ("/skill:project-collaboration", shared_command),
+                ("$agent-collab:project-collaboration", shared_command),
+            ):
+                self.assertLess(
+                    section.index(entrypoint),
+                    section.index(command),
+                    f"{relative_path} 应先引导加载 {entrypoint} 再执行校验命令",
+                )
 
 
 if __name__ == "__main__":
