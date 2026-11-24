@@ -29,6 +29,40 @@ claude plugin list
 claude --plugin-dir /absolute/path/agent-collab
 ```
 
+## 让 agent 自行安装
+
+把下面整段发给 Claude Code agent。它会先检查现有安装，再添加公开 marketplace、安装或更新 Plugin，并用 `claude plugin list` 核对版本；遇到权限确认或命令失败会停下来报告，不绕过。
+
+```text
+请帮我安装团队协作 Plugin agent-collab，只做安装与验证：不要修改项目代码或
+CLAUDE.md/AGENTS.md，不要把 Plugin 的 Skill 复制到项目目录，不要 commit 或 push。
+
+来源：https://github.com/xiaobin/agent-collab
+期望版本：0.2.0（若仓库已发布更高版本，先报告实际版本，不要自行跨版本升级）
+安装范围：user
+
+按顺序执行：
+1. 运行 `claude plugin marketplace list` 和 `claude plugin list`，判断是否已添加
+   marketplace `agent-collab`、是否已安装 `agent-collab@agent-collab`。
+2. marketplace 未添加时运行：
+   claude plugin marketplace add xiaobin/agent-collab
+   已添加时运行：
+   claude plugin marketplace update agent-collab
+3. Plugin 未安装时运行：
+   claude plugin install agent-collab@agent-collab
+   已安装时运行：
+   claude plugin update agent-collab@agent-collab
+4. 运行 `claude plugin list`，确认 agent-collab@agent-collab 的 Status 为 enabled，
+   Version 与期望版本一致。
+5. 如果出现交互确认、权限不足或 blocked，停止并原样报告，不要修改权限设置或
+   使用 --plugin-dir 代替正式安装。
+
+完成后汇报：实际执行的命令、退出码、安装前后的版本、还需要我做什么。
+不要声称安装成功，除非 `claude plugin list` 已显示 enabled 和正确版本。
+```
+
+安装或更新后重启 Claude Code，再在新会话中使用 `/agent-collab:project-collaboration`。上面的命令会写入用户级 Claude Code 设置；如果团队要求固定版本，应由团队在接入说明中给出该版本，而不是让 agent 自行选择。
+
 ## 接入项目
 
 不要复制公共 Skill 到项目 `.claude/skills/`。按 [接入指南](docs/adoption.md) 操作：
@@ -87,4 +121,4 @@ claude plugin update agent-collab@agent-collab
 - 校验脚本不能判断目标是否正确、测试是否有业务价值，也不能替代独立复审和人的业务验收。
 - 评估脚本只校验记录结构与确定性门禁，不能证明引用文件真实、命令确实执行或业务已验收；画像不用于自动淘汰、自动部署或对外发布。
 - 初始方案不启用组织强制安装；如未来要求所有成员不可关闭，再单独设计 managed settings。
-- 本仓库暂不包含远程发布地址。提交、推送和团队分发需要明确授权后执行。
+- 公共正本通过 GitHub `xiaobin/agent-collab` 分发；提交、推送和版本发布仍需明确授权，agent 不得自行改写或发布公共正本。
