@@ -26,6 +26,12 @@
 
 三端共用包装器需要 `python3`。安装前运行 `python3 --version`；命令不可用时先安装 Python 3，不要让 agent 通过修改权限或替换脚本绕过。
 
+## 与 Herdr 的关系
+
+`agent-collab` 不依赖 Herdr，也不是 Herdr 插件。它定义跨项目的协作流程；Herdr 是可选的任务编排层，负责创建 pane、派发任务、等待 agent 和回收结果。
+
+采用 Herdr 的项目，应把调度规范、pane/lane 生命周期和项目特例留在项目自己的 `AGENTS.md` 与 `.herdr/` 文档中，不复制进公共包。`agent-collab` 只约定项目状态文件，例如 `.herdr/current-task.json`、`.herdr/PROGRESS.md` 和评估记录；不使用 Herdr 时，这些文件也可以手工或其他调度方式维护，只是没有 Herdr 提供的自动派单与回收能力。
+
 ## Claude Code 安装
 
 执行前先确认安装范围：`user`、`project` 或 `local`，并让 marketplace 与 Plugin 使用同一范围。下面是用户级示例：
