@@ -51,6 +51,11 @@ class CodexPackageTest(unittest.TestCase):
         self.assertNotIn("codex exec", verifier)
         for excluded in (".omc", ".herdr", ".git", "__pycache__", ".DS_Store"):
             self.assertIn(excluded, verifier)
+        self.assertIn('"$ROOT/.codex-plugin/plugin.json"', verifier)
+        self.assertNotIn('"$ROOT/.claude-plugin/plugin.json"', verifier)
+        self.assertIn("expected_version", verifier)
+        self.assertNotRegex(verifier, r'assert install\["version"\] == "\d+\.\d+\.\d+"')
+        self.assertNotRegex(verifier, r"agent-collab/\d+\.\d+\.\d+/skills")
 
 
 if __name__ == "__main__":

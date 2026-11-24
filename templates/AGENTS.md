@@ -8,6 +8,8 @@
 - Pi：`/skill:project-collaboration`
 - Codex：`$agent-collab:project-collaboration`
 
+采用 Herdr 的项目，再按需加载公共包的 `references/herdr.md`；本文件只保留项目的仓库路径、agent 分工、调度参数和验收环境。
+
 ## 目标权威来源
 
 <!-- 填写 PRD、Issue、任务卡或用户指令的位置。 -->

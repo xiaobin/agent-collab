@@ -68,16 +68,17 @@ description: 用于启动、推进、恢复或验收 agent 参与的项目任务
 
 ## 4. 派单与并行
 
-只有存在明确目标、写范围和验收命令时才派单。每个任务写清 `task_id`、绝对 `cwd`、目标来源、允许修改范围、依赖、验收和超时。
+没有目标来源不派单。只有存在明确目标、写范围和验收命令时才派单。每个任务写清 `task_id`、`attempt_id`、`goal_ref`、绝对 `cwd`、允许修改范围、依赖、验收和超时。
 
 - 无依赖且写范围完全不重叠才并行；同一路径同一时间一个 writer。
+- worker 不直接指挥其他 worker；跨 lane 的派单、取消、重试只由协调者发起并写入 ledger，避免出现账本之外的隐式 Attempt。
 - 共享契约、锁文件、配置、格式化和数据库 migration 单点串行。
 - agent 必须进入目标仓库工作，不在未经指定的仓库外副本修改。
 - 派发前查阅同类历史评估，记录选择理由、样本量和已知风险；样本不足标 `insufficient_data`，它表示没有可信排名，不是禁用。
 - 派发前记录任务与授权；回收时检查真实 diff、亲自重跑验收，再由独立 reviewer 审查。
 - `done` 只触发回收；`timeout` 或失联只触发对账，不盲目重发。
 
-完整进入/出口条件见 [生命周期](references/lifecycle.md)；评估字段、门禁和派单画像见 [Agent 评估](references/evaluation.md)。
+完整进入/出口条件见 [生命周期](references/lifecycle.md)；评估字段、门禁和派单画像见 [Agent 评估](references/evaluation.md)；使用 Herdr 时按需读取 [Herdr 编排适配](references/herdr.md)，不把 Herdr 变成所有项目的硬依赖。
 
 ## 5. 验证与交付
 

@@ -29,26 +29,27 @@ printf '%s\n' "$PLUGIN_ADD_JSON" | tee "$TMP_DIR/plugin-add.json"
 codex plugin list
 codex debug prompt-input > "$TMP_DIR/prompt-input.json"
 
-INSTALLED_PATH=$(python3 - "$TMP_DIR/plugin-add.json" "$TMP_DIR/prompt-input.json" <<'PY'
+INSTALLED_PATH=$(python3 - "$TMP_DIR/plugin-add.json" "$TMP_DIR/prompt-input.json" "$ROOT/.codex-plugin/plugin.json" <<'PY'
 import json
 import sys
 from pathlib import Path
 
+expected_version = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))["version"]
 install = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 assert install["pluginId"] == "agent-collab@agent-collab", install
 assert install["name"] == "agent-collab", install
 assert install["marketplaceName"] == "agent-collab", install
-assert install["version"] == "0.3.0", install
+assert install["version"] == expected_version, install
 installed = Path(install["installedPath"])
 manifest = json.loads((installed / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
 assert manifest["name"] == "agent-collab", manifest
-assert manifest["version"] == "0.3.0", manifest
+assert manifest["version"] == expected_version, manifest
 skill = installed / "skills" / "project-collaboration" / "SKILL.md"
 assert skill.is_file(), skill
 prompt = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
 rendered = json.dumps(prompt, ensure_ascii=False)
 assert "- agent-collab:project-collaboration:" in rendered, "namespaced skill missing from Codex prompt input"
-assert "agent-collab/0.3.0/skills/project-collaboration/SKILL.md" in rendered, rendered[:1000]
+assert f"agent-collab/{expected_version}/skills/project-collaboration/SKILL.md" in rendered, rendered[:1000]
 print(installed)
 PY
 )

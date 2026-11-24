@@ -8,7 +8,7 @@
 
 1. 安装团队指定版本的公共包：Claude Code 和 Codex 使用各自的 Plugin marketplace，Pi 使用 Pi package。安装范围和是否固定版本必须先由用户确认，agent 不得自行假定；三种入口见 [README](../README.md)。
 2. 复制 `templates/AGENTS.md` 到项目根目录，填写目标来源、写权限和真实验收命令。Claude Code 项目同时复制 `templates/CLAUDE.md`；Pi 和 Codex 可直接读取 `AGENTS.md`。
-3. 创建 `.herdr/`，从模板复制 `current-task.json` 和 `PROGRESS.md`。评估记录 `.herdr/agent-evaluations.jsonl` 在第一次 Attempt 结束后由流程追加，不预填、不从其他项目复制。
+3. 创建 `.herdr/`，从模板复制 `current-task.json` 和 `PROGRESS.md`。评估记录 `.herdr/agent-evaluations.jsonl` 在第一次 Attempt 结束后由流程追加，不预填、不从其他项目复制。使用 Herdr 时，再按需加载 [Herdr 编排适配](../skills/project-collaboration/references/herdr.md)，并把本项目的仓库路径、agent 分工、命令和 lane 资源写进项目自己的文档。
 4. 填写任务卡后加载对应入口：
    - Claude Code：`/agent-collab:project-collaboration`
    - Pi：`/skill:project-collaboration`
@@ -38,6 +38,7 @@
 | 现有内容 | 去向 |
 | --- | --- |
 | 通用目标确认、生命周期、沟通、权限、验收规则 | 使用公共正本，不在项目复制第二份 |
+| Herdr lane 生命周期、派单、状态和 ledger 规则 | 使用公共 `references/herdr.md`；项目只保留自己的调度参数 |
 | 当前项目目标、进行中阶段、写范围 | 保留在项目任务卡和 PROGRESS |
 | 项目接口、数据、命令、环境约束 | 保留在项目文档或薄 AGENTS.md |
 | 当前 diff、ledger、测试输出、失败证据 | 原样保留，不参与公共模板迁移 |

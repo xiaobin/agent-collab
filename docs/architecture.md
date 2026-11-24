@@ -9,6 +9,7 @@
 | 内容 | 载体 | 原因 |
 | --- | --- | --- |
 | 通用生命周期、沟通和验收流程 | 公共 Skill 与 references | 团队复用，按需进入上下文 |
+| Herdr 调度、状态、回执和 ledger 规则 | `references/herdr.md`（可选） | 只在采用 Herdr 的项目按需加载，不成为包依赖 |
 | 项目目标来源、写权限、验收命令 | 项目薄 `AGENTS.md` | 项目事实不能写死在公共流程里 |
 | 当前目标、范围和验收 | `.herdr/current-task.json` | 机器可读，可校验和交接 |
 | 进度、下一动作、恢复入口 | `.herdr/PROGRESS.md` | 人类可读的快照 |
@@ -44,6 +45,8 @@ agent-collab/
 
 Claude Code Plugin 与 marketplace 同根，marketplace entry 的 `source` 为 `./`。Pi 通过根目录 `package.json` 的 `pi.skills` 显式加载同一个 Skill；Codex 通过 `.codex-plugin/plugin.json` 导出同一目录，并由 `.agents/plugins/marketplace.json` 分发。三端 manifest 的名称与版本必须一致，结构测试会检查这一约束。Skill 内的 shell 包装器从自身位置定位公共 Python 脚本，避免把 `${CLAUDE_PLUGIN_ROOT}` 当成跨工具环境变量。
 
+Herdr 不是安装依赖，也不出现在三端 manifest 中。`references/herdr.md` 只定义项目无关的调度纪律；具体仓库路径、agent 分工、项目命令、pane 命名和验收环境由接入项目自己维护。这样同一个公共包既能服务不使用 Herdr 的项目，也能作为 Herdr 项目的规范来源。
+
 ## 提示与硬门禁的边界
 
 Skill 和 AGENTS.md 是模型指令，通常会被遵守，但不是权限系统。脚本只能确定性地验证它定义的结构和开工条件。真正的权限控制仍由 Claude Code、Pi 或 Codex 的权限机制、项目脚本、CI 和人的审批承担。
@@ -52,7 +55,7 @@ Skill 和 AGENTS.md 是模型指令，通常会被遵守，但不是权限系统
 
 ## 上下文预算
 
-主 Skill 只保留每次任务都需要的主路径；生命周期、决策、沟通、验收和交接细节拆入 references。项目 AGENTS.md 不再复制整套流程。升级时优先改最便宜的载体，避免把公共规则重新堆回常驻文件。
+主 Skill 只保留每次任务都需要的主路径；生命周期、决策、沟通、验收和交接细节拆入 references，Herdr 适配只作为按需参考，不进入默认上下文。项目 AGENTS.md 不再复制整套流程。升级时优先改最便宜的载体，避免把公共规则重新堆回常驻文件。
 
 ## 状态隔离
 

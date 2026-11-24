@@ -9,7 +9,34 @@
 - 项目评估记录：`.herdr/agent-evaluations.jsonl`，每个 Attempt 一条，最终记录与 correction 也追加；画像由它派生。
 - 范围清单：跨模块任务的逐项覆盖状态。
 
-状态是否纳入 Git 由项目决定；运行状态、评估历史和证据不得被插件安装或升级覆盖。
+状态是否纳入 Git 由项目决定；若 `.herdr/` 落在某个 Git 仓内，必须把 `.herdr/` 加入该仓 `.gitignore`，避免运行状态污染 diff。运行状态、评估历史和证据不得被插件安装或升级覆盖。
+
+## Dispatch Ledger
+
+调度事实使用项目根目录的 append-only JSONL：`.herdr/dispatch-ledger.jsonl`。一行一个事件，不改写、不删除、不重排历史；发现记错时追加 `correction`，写明被更正的事件、任务和原因。
+
+公共字段：`ts`、`event`、`task_id`、`attempt_id`、`actor`、`note`。每个新派单或修复 Attempt 递增 `attempt_id`，修复任务不得复用原 Attempt 的 ID。派单前或同一时刻先写 `dispatch`，任务结束后不得凭记忆补记。
+
+| event | 记录时机 | 关键字段 |
+| --- | --- | --- |
+| `dispatch` | 发出 prompt 之前或同一时刻 | `goal_ref` `agent` `pane` `cwd` `goal` `write_scope` `acceptance` `timeout_ms` `prompt_digest` |
+| `state` | 每次观察到运行状态变化 | `herdr_state` `business_state` |
+| `result` | 收到回执 | `status` `result_path` `files` `summary` |
+| `verify` | 协调者亲自重跑验收 | `command` `exit_code` `output_digest` `git_summary` |
+| `review` | 独立审查完成 | `reviewer` `verdict` `findings` |
+| `decision` | 协调者代替人做中途决策 | `goal_ref` `question` `options` `chosen` `rationale` `reversible` |
+| `verdict` | 给出业务结论 | `verdict`（`SUCCEEDED`/`FAILED`/`BLOCKED`/`UNKNOWN`）`note` |
+| `integration` | 集成与联合验收 | `scope` `commands` `exit_code` `verdict` |
+
+记录必须与真实返回一致，不得编造 agent、pane、退出码或时间戳。`result_path` 指向仓库外的临时回执时，要在事件中保留该路径。`verdict` 只能在 Git 证据、测试证据和独立审查齐备后写入；`done` 只触发回收，不触发成功。
+
+常用读取：
+
+```bash
+tail -n 20 .herdr/dispatch-ledger.jsonl | jq -c .
+jq -r 'select(.task_id=="<task_id>") | [.ts,.event,.attempt_id,(.herdr_state//""),(.verdict//"")] | @tsv' \
+  .herdr/dispatch-ledger.jsonl
+```
 
 ## PROGRESS 最小内容
 

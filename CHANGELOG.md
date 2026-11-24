@@ -2,6 +2,22 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.0] - 2026-11-24
+
+### Added
+
+- 可选的 Herdr 编排适配参考：lane 生命周期、派单前置、pane/agent 命令形态、状态处理、结构化回执和资源收尾。
+- 完整 dispatch ledger 事件契约：dispatch、state、result、verify、review、decision、verdict、integration，保持 append-only 和 Attempt 递增。
+- 验收顺序与四态结论：缺少证据时只能记 `UNKNOWN` 或 `BLOCKED`，不能记 `SUCCEEDED`。
+- 修复轮次纪律：小批量、可执行完成定义、反证、回归锁定、同一缺陷两轮未过即升级。
+- 统一的进度符号 `✅`/`◐`/`▶`/`○`/`⛔` 及总目标骨架报告规则。
+
+### Compatibility
+
+- Herdr 是可选适配，不是安装依赖；不采用 Herdr 的项目无需迁移。
+- 任务卡 schema、评估记录和项目 `.herdr/` 状态格式不变。
+- 具体仓库、agent、pane、命令、验收环境和项目特例仍由项目维护，不进入公共包。
+
 ## [0.3.0] - 2026-11-24
 
 ### Added

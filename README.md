@@ -30,7 +30,7 @@
 
 `agent-collab` 不依赖 Herdr，也不是 Herdr 插件。它定义跨项目的协作流程；Herdr 是可选的任务编排层，负责创建 pane、派发任务、等待 agent 和回收结果。
 
-采用 Herdr 的项目，应把调度规范、pane/lane 生命周期和项目特例留在项目自己的 `AGENTS.md` 与 `.herdr/` 文档中，不复制进公共包。`agent-collab` 只约定项目状态文件，例如 `.herdr/current-task.json`、`.herdr/PROGRESS.md` 和评估记录；不使用 Herdr 时，这些文件也可以手工或其他调度方式维护，只是没有 Herdr 提供的自动派单与回收能力。
+采用 Herdr 的项目，按需加载 [Herdr 编排适配](skills/project-collaboration/references/herdr.md)：公共包给出无项目事实的 lane 生命周期、派单、状态处理、回执和 ledger 规则；项目自己的仓库路径、agent 分工、命令、验收环境和特例仍留在项目 `AGENTS.md` 与 `.herdr/` 文档中。`agent-collab` 约定项目状态文件，例如 `.herdr/current-task.json`、`.herdr/PROGRESS.md` 和评估记录；不使用 Herdr 时，这些文件也可以手工或其他调度方式维护，只是没有 Herdr 提供的自动派单与回收能力。
 
 ## Claude Code 安装
 
@@ -297,7 +297,8 @@ codex plugin add agent-collab@agent-collab
 
 ## 当前边界
 
-- v0.3 在同一正本上增加 Pi 与 Codex 分发和三端脚本入口；目标、沟通、状态恢复、任务卡和 Agent 评估规则保持兼容。
+- v0.4 在同一正本上增加可选 Herdr 编排规范、完整 dispatch ledger 和验收/修复门禁；沿用 Pi 与 Codex 分发和三端脚本入口。
+- Herdr 适配只定义项目无关的调度纪律；具体仓库、pane、agent、测试环境和项目特例必须由项目自己维护，不能复制成公共通用值。
 - 三种工具的 Skill 都是模型指令，不是权限系统；校验脚本不能判断目标是否正确、测试是否有业务价值，也不能替代独立复审和人的业务验收。
 - 评估脚本只校验记录结构与确定性门禁，不能证明引用文件真实、命令确实执行或业务已验收；画像不用于自动淘汰、自动部署或对外发布。
 - 初始方案不启用组织强制安装；如未来要求所有成员不可关闭，再单独设计 managed settings 或对应工具的组织管控。

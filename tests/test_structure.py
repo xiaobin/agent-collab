@@ -42,6 +42,65 @@ class PluginStructureTest(unittest.TestCase):
             relative = f"references/{reference.name}"
             self.assertIn(relative, local_links, f"orphan reference: {relative}")
 
+    def test_herdr_reference_is_optional_and_project_agnostic(self):
+        reference = (
+            ROOT / "skills" / "project-collaboration" / "references" / "herdr.md"
+        ).read_text(encoding="utf-8")
+        for required in [
+            "不是本公共包的依赖",
+            "只有用户明确要求使用 Herdr",
+            'test "${HERDR_ENV:-}" = 1',
+            "没有目标就不派单",
+            "`done` 只触发回收",
+            "dispatch",
+            "verdict",
+        ]:
+            self.assertIn(required, reference)
+        for forbidden in ["medcare", "qingniao", "jbinfo", "aiky", "/Users/", "herdr-control"]:
+            self.assertNotIn(forbidden, reference.lower())
+        self.assertNotRegex(reference, r"\bw\d+:p\w+")
+
+    def test_herdr_batch_dispatch_does_not_wait_per_lane(self):
+        reference = (
+            ROOT / "skills" / "project-collaboration" / "references" / "herdr.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn('herdr agent prompt <agent-name> "<prompt>"\n', reference)
+        self.assertNotIn('herdr agent prompt <agent-name> "<prompt>" --wait', reference)
+        self.assertIn("不要在批量派发循环里使用 `--wait`", reference)
+        self.assertIn("worker 不直接指挥其他 worker", (
+            ROOT / "skills" / "project-collaboration" / "SKILL.md"
+        ).read_text(encoding="utf-8"))
+        self.assertIn("分屏启动", reference)
+        self.assertIn("<agent>-review", reference)
+
+    def test_dispatch_ledger_contract_is_complete(self):
+        handoff = (
+            ROOT / "skills" / "project-collaboration" / "references" / "handoff.md"
+        ).read_text(encoding="utf-8")
+        for event in [
+            "dispatch",
+            "state",
+            "result",
+            "verify",
+            "review",
+            "decision",
+            "verdict",
+            "integration",
+        ]:
+            self.assertIn(f"`{event}`", handoff)
+        for field in ["goal_ref", "attempt_id", "result_path", "exit_code", "prompt_digest"]:
+            self.assertIn(f"`{field}`", handoff)
+        self.assertIn(".gitignore", handoff)
+
+    def test_acceptance_requires_evidence_backed_verdict(self):
+        acceptance = (
+            ROOT / "skills" / "project-collaboration" / "references" / "acceptance.md"
+        ).read_text(encoding="utf-8")
+        for verdict in ["SUCCEEDED", "FAILED", "BLOCKED", "UNKNOWN"]:
+            self.assertIn(f"`{verdict}`", acceptance)
+        self.assertIn("缺少任何必需证据时只能记 `UNKNOWN` 或 `BLOCKED`", acceptance)
+        self.assertIn("同一缺陷两轮未过就升级", acceptance)
+
     def test_changelog_contains_manifest_version(self):
         manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
