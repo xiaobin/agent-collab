@@ -42,6 +42,12 @@ class CodexPackageTest(unittest.TestCase):
         verifier = (ROOT / "scripts" / "verify_codex.sh").read_text(encoding="utf-8")
         self.assertIn('CODEX_HOME="$TMP_DIR/codex-home"', verifier)
         self.assertIn("codex debug prompt-input", verifier)
+        self.assertIn(
+            "PLUGIN_ADD_JSON=$(codex plugin add agent-collab@agent-collab --json)",
+            verifier,
+        )
+        self.assertIn('tee "$TMP_DIR/plugin-add.json"', verifier)
+        self.assertNotIn("codex plugin add agent-collab@agent-collab --json >", verifier)
         self.assertNotIn("codex exec", verifier)
         for excluded in (".omc", ".herdr", ".git", "__pycache__", ".DS_Store"):
             self.assertIn(excluded, verifier)

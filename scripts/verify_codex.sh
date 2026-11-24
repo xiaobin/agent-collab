@@ -24,7 +24,8 @@ tar \
 
 export CODEX_HOME="$TMP_DIR/codex-home"
 codex plugin marketplace add "$TMP_DIR/package" --json > "$TMP_DIR/marketplace-add.json"
-codex plugin add agent-collab@agent-collab --json > "$TMP_DIR/plugin-add.json"
+PLUGIN_ADD_JSON=$(codex plugin add agent-collab@agent-collab --json)
+printf '%s\n' "$PLUGIN_ADD_JSON" | tee "$TMP_DIR/plugin-add.json"
 codex plugin list
 codex debug prompt-input > "$TMP_DIR/prompt-input.json"
 
