@@ -8,7 +8,7 @@
 
 1. 安装团队指定版本的 Plugin。
 2. 复制 `templates/AGENTS.md` 和 `templates/CLAUDE.md` 到项目根目录，填写目标来源、写权限和真实验收命令。
-3. 创建 `.herdr/`，从模板复制 `current-task.json` 和 `PROGRESS.md`。
+3. 创建 `.herdr/`，从模板复制 `current-task.json` 和 `PROGRESS.md`。评估记录 `.herdr/agent-evaluations.jsonl` 在第一次 Attempt 结束后由流程追加，不预填、不从其他项目复制。
 4. 填写任务卡后，在 Claude Code 会话中通过 `/agent-collab:project-collaboration` 开始任务，并在该 Plugin 流程内执行开工校验：
 
    ```bash
@@ -43,6 +43,9 @@
 4. PROGRESS 能回答当前阶段、下一动作、阻塞、资源和恢复第一条命令。
 5. 项目原有验收命令仍真实可执行。
 6. 现有 `.herdr/`、ledger 和证据未被安装或升级覆盖。
+7. 若已有 `.herdr/agent-evaluations.jsonl`，升级后逐行保留、未重排；新评估只追加，不覆盖历史。
+
+评估记录的结构、门禁和汇总口径见 [Agent 评估](../skills/project-collaboration/references/evaluation.md)。脚本通过只代表记录结构成立，不代表业务已验收。
 
 ## 多项目统一
 

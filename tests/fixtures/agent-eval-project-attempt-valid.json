@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "eval-project-attempt-001",
+  "mode": "project",
+  "stage": "attempt",
+  "task_id": "PROJ-002",
+  "attempt_id": "attempt-001",
+  "goal_ref": "PROJ-002",
+  "agent": "backend-1",
+  "evaluator": "coordinator",
+  "reviewer": null,
+  "task_type": "backend",
+  "complexity": "medium",
+  "created_at": "2026-11-24T10:05:00+00:00",
+  "evidence": {
+    "dispatch_ref": ".herdr/dispatch-ledger.jsonl#dispatch-PROJ-002-attempt-001",
+    "result_ref": "/tmp/herdr-result-PROJ-002-attempt-001.json",
+    "review_ref": null,
+    "business_acceptance_ref": null,
+    "verification": [
+      {
+        "acceptance_id": "AC-1",
+        "command": "python3 -m unittest tests.test_orders -v",
+        "cwd": "/Users/example/project",
+        "exit_code": 0,
+        "test_count": 12,
+        "output_ref": "/tmp/herdr-verify-PROJ-002-attempt-001.log"
+      }
+    ]
+  },
+  "gates": {
+    "authorization": "pass",
+    "external_impact": "pass",
+    "write_scope": "pass",
+    "evidence_integrity": "pass",
+    "coordinator_rerun": "pass",
+    "independent_review": "pending",
+    "business_acceptance": "pending"
+  },
+  "dimensions": {
+    "goal_alignment": {
+      "level": 2,
+      "rationale": "Implementation matches the dispatch goal so far.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-002-attempt-001"]
+    },
+    "implementation_correctness": {
+      "level": 2,
+      "rationale": "Targeted tests pass but independent review has not run.",
+      "evidence_refs": ["/tmp/herdr-verify-PROJ-002-attempt-001.log"]
+    },
+    "verification_discipline": {
+      "level": 2,
+      "rationale": "Targeted tests were rerun by the coordinator.",
+      "evidence_refs": ["/tmp/herdr-verify-PROJ-002-attempt-001.log"]
+    },
+    "communication_handoff": {
+      "level": 1,
+      "rationale": "The result file is present but incomplete.",
+      "evidence_refs": ["/tmp/herdr-result-PROJ-002-attempt-001.json"]
+    },
+    "recovery": {
+      "level": null,
+      "rationale": "No recovery event occurred; this dimension is unknown.",
+      "evidence_refs": []
+    }
+  },
+  "findings": [],
+  "metrics": {
+    "repair_rounds": 0,
+    "duration_seconds": null,
+    "token_usage": null
+  },
+  "benchmark": null,
+  "notes": "Structurally valid attempt: review and business acceptance are pending."
+}

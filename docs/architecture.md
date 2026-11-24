@@ -13,6 +13,8 @@
 | 当前目标、范围和验收 | `.herdr/current-task.json` | 机器可读，可校验和交接 |
 | 进度、下一动作、恢复入口 | `.herdr/PROGRESS.md` | 人类可读的快照 |
 | 调度、验证、审查和决策事实 | 项目 ledger 与原始证据 | 可追加追溯，不靠记忆重建 |
+| 每个 Attempt 的评估事实 | 项目 `.herdr/agent-evaluations.jsonl` | 项目所有、只追加；最终记录与 correction 也追加，脚本只校验结构与确定性门禁 |
+| 派单画像与 benchmark 汇总 | 由评估记录派生的 rollup 输出 | 可重建的派生工件，不作为权威证据 |
 | 开工字段与结构检查 | `scripts/validate_task.py` | 确定性、可重复、无模型歧义 |
 | 非显性长期偏好 | 用户或项目 memory | 只作背景，不作任务事实源 |
 
@@ -49,3 +51,9 @@ Skill 和 AGENTS.md 是模型指令，通常会被遵守，但不是权限系统
 ## 状态隔离
 
 Plugin 安装和更新只处理公共文件。项目的 `.herdr/`、ledger、测试结果和业务验收证据属于项目，公共发布脚本不得清空、重建或覆盖它们。
+
+## 评估与画像
+
+评估把“谁在什么证据下判成什么”落到项目自己的 `.herdr/agent-evaluations.jsonl`，每个 Attempt 一条，最终记录与 correction 也追加，历史不改写。汇总画像由 `scripts/agent_eval.py rollup` 从最终记录派生，可随时重建；画像与原始记录冲突时以原始记录和证据为准。
+
+评估不引入新的自动 hook，也不改变权限。脚本能校验记录结构和门禁取值，不能证明引用文件真实、命令确实执行或业务有价值；这些仍由协调者重跑、独立 reviewer 和用户业务验收承担。`mode` 区分项目评估与 benchmark，两者分开汇总；样本不足只给原始数据，不给排名。

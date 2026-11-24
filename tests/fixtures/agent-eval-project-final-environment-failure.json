@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "eval-project-final-environment-001",
+  "mode": "project",
+  "stage": "final",
+  "task_id": "PROJ-004",
+  "attempt_id": "attempt-001",
+  "goal_ref": "PROJ-004",
+  "agent": "backend-1",
+  "evaluator": "coordinator",
+  "reviewer": "reviewer-1",
+  "task_type": "backend",
+  "complexity": "medium",
+  "created_at": "2026-11-24T10:15:00Z",
+  "evidence": {
+    "dispatch_ref": ".herdr/dispatch-ledger.jsonl#dispatch-PROJ-004-attempt-001",
+    "result_ref": "/tmp/herdr-result-PROJ-004-attempt-001.json",
+    "review_ref": ".herdr/dispatch-ledger.jsonl#review-PROJ-004-attempt-001",
+    "business_acceptance_ref": ".herdr/dispatch-ledger.jsonl#business-PROJ-004-attempt-001",
+    "verification": [
+      {
+        "acceptance_id": "AC-1",
+        "command": "./scripts/verify.sh",
+        "cwd": "/Users/example/project",
+        "exit_code": 0,
+        "test_count": 18,
+        "output_ref": "/tmp/herdr-verify-PROJ-004-attempt-001.log"
+      }
+    ]
+  },
+  "gates": {
+    "authorization": "pass",
+    "external_impact": "pass",
+    "write_scope": "pass",
+    "evidence_integrity": "pass",
+    "coordinator_rerun": "pass",
+    "independent_review": "pass",
+    "business_acceptance": "fail"
+  },
+  "dimensions": {
+    "goal_alignment": {
+      "level": 3,
+      "rationale": "Implementation covered the requested scope.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#review-PROJ-004-attempt-001"]
+    },
+    "implementation_correctness": {
+      "level": 3,
+      "rationale": "Independent review found no implementation defects.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#review-PROJ-004-attempt-001"]
+    },
+    "verification_discipline": {
+      "level": 3,
+      "rationale": "All acceptance commands were rerun.",
+      "evidence_refs": ["/tmp/herdr-verify-PROJ-004-attempt-001.log"]
+    },
+    "communication_handoff": {
+      "level": 3,
+      "rationale": "The handoff was complete.",
+      "evidence_refs": ["/tmp/herdr-result-PROJ-004-attempt-001.json"]
+    },
+    "recovery": {
+      "level": null,
+      "rationale": "No recovery event occurred; this dimension is unknown.",
+      "evidence_refs": []
+    }
+  },
+  "findings": [
+    {
+      "severity": "high",
+      "category": "other",
+      "summary": "Business acceptance failed because the shared staging database was unavailable.",
+      "evidence_ref": ".herdr/dispatch-ledger.jsonl#business-PROJ-004-attempt-001",
+      "attribution": "environment",
+      "blocking": true,
+      "gate": "business_acceptance"
+    }
+  ],
+  "metrics": {
+    "repair_rounds": 0,
+    "duration_seconds": null,
+    "token_usage": null
+  },
+  "benchmark": null,
+  "notes": "Task failure caused solely by the environment, not by agent capability."
+}

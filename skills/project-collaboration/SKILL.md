@@ -71,10 +71,11 @@ description: 用于启动、推进、恢复或验收 agent 参与的项目任务
 - 无依赖且写范围完全不重叠才并行；同一路径同一时间一个 writer。
 - 共享契约、锁文件、配置、格式化和数据库 migration 单点串行。
 - agent 必须进入目标仓库工作，不在未经指定的仓库外副本修改。
+- 派发前查阅同类历史评估，记录选择理由、样本量和已知风险；样本不足标 `insufficient_data`，它表示没有可信排名，不是禁用。
 - 派发前记录任务与授权；回收时检查真实 diff、亲自重跑验收，再由独立 reviewer 审查。
 - `done` 只触发回收；`timeout` 或失联只触发对账，不盲目重发。
 
-完整进入/出口条件见 [生命周期](references/lifecycle.md)。
+完整进入/出口条件见 [生命周期](references/lifecycle.md)；评估字段、门禁和派单画像见 [Agent 评估](references/evaluation.md)。
 
 ## 5. 验证与交付
 
@@ -86,8 +87,9 @@ description: 用于启动、推进、恢复或验收 agent 参与的项目任务
 4. 重要改动经过独立只读复审；实现者不能自审替代。
 5. 技术验证与业务验收分开。编译、单测或手动触发不能自动替代真实业务链路。
 6. 所有未验证项、遗留风险、权限边界和回滚条件明确披露。
+7. 每个 Attempt 都有评估记录；最终通过前 `agent_eval.py check --final` 返回 0。业务验收未执行时保持 `pending`，不得写成通过。
 
-详见 [证据验收](references/acceptance.md)。
+详见 [证据验收](references/acceptance.md) 与 [Agent 评估](references/evaluation.md)。
 
 ## 6. 暂停、恢复与收尾
 

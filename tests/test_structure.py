@@ -28,6 +28,20 @@ class PluginStructureTest(unittest.TestCase):
         for link in local_links:
             self.assertTrue((skill_dir / link).is_file(), link)
 
+    def test_all_skill_references_are_linked(self):
+        skill_dir = ROOT / "skills" / "project-collaboration"
+        text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        local_links = {
+            link
+            for link in re.findall(r"\]\(([^)]+)\)", text)
+            if "://" not in link and not link.startswith("#")
+        }
+        references = sorted((skill_dir / "references").glob("*.md"))
+        self.assertGreaterEqual(len(references), 6)
+        for reference in references:
+            relative = f"references/{reference.name}"
+            self.assertIn(relative, local_links, f"orphan reference: {relative}")
+
     def test_changelog_contains_manifest_version(self):
         manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -55,6 +69,39 @@ class PluginStructureTest(unittest.TestCase):
             "状态",
         ]:
             self.assertIn(field, progress, field)
+
+    def test_agent_evaluation_template_contract(self):
+        record = json.loads(
+            (ROOT / "templates" / "agent-evaluation.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(record["schema_version"], 1)
+        self.assertEqual(record["mode"], "project")
+        self.assertEqual(record["stage"], "final")
+        self.assertIsNone(record["benchmark"])
+        self.assertNotEqual(record["agent"], record["evaluator"])
+        self.assertNotEqual(record["agent"], record["reviewer"])
+        self.assertEqual(
+            set(record["gates"]),
+            {
+                "authorization",
+                "external_impact",
+                "write_scope",
+                "evidence_integrity",
+                "coordinator_rerun",
+                "independent_review",
+                "business_acceptance",
+            },
+        )
+        self.assertEqual(
+            set(record["dimensions"]),
+            {
+                "goal_alignment",
+                "implementation_correctness",
+                "verification_discipline",
+                "communication_handoff",
+                "recovery",
+            },
+        )
 
     def test_docs_run_validation_inside_plugin_context(self):
         for relative_path in ("README.md", "docs/adoption.md"):

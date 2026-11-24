@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "eval-project-final-self-eval-001",
+  "mode": "project",
+  "stage": "final",
+  "task_id": "PROJ-005",
+  "attempt_id": "attempt-001",
+  "goal_ref": "PROJ-005",
+  "agent": "backend-1",
+  "evaluator": "backend-1",
+  "reviewer": "reviewer-1",
+  "task_type": "backend",
+  "complexity": "medium",
+  "created_at": "2026-11-24T10:20:00Z",
+  "evidence": {
+    "dispatch_ref": ".herdr/dispatch-ledger.jsonl#dispatch-PROJ-005-attempt-001",
+    "result_ref": "/tmp/herdr-result-PROJ-005-attempt-001.json",
+    "review_ref": ".herdr/dispatch-ledger.jsonl#review-PROJ-005-attempt-001",
+    "business_acceptance_ref": ".herdr/dispatch-ledger.jsonl#business-PROJ-005-attempt-001",
+    "verification": [
+      {
+        "acceptance_id": "AC-1",
+        "command": "./scripts/verify.sh",
+        "cwd": "/Users/example/project",
+        "exit_code": 0,
+        "test_count": 10,
+        "output_ref": "/tmp/herdr-verify-PROJ-005-attempt-001.log"
+      }
+    ]
+  },
+  "gates": {
+    "authorization": "pass",
+    "external_impact": "pass",
+    "write_scope": "pass",
+    "evidence_integrity": "pass",
+    "coordinator_rerun": "pass",
+    "independent_review": "pass",
+    "business_acceptance": "pass"
+  },
+  "dimensions": {
+    "goal_alignment": {
+      "level": 3,
+      "rationale": "Self-evaluation must not be accepted.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-005-attempt-001"]
+    },
+    "implementation_correctness": {
+      "level": 3,
+      "rationale": "Self-evaluation must not be accepted.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-005-attempt-001"]
+    },
+    "verification_discipline": {
+      "level": 3,
+      "rationale": "Self-evaluation must not be accepted.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-005-attempt-001"]
+    },
+    "communication_handoff": {
+      "level": 3,
+      "rationale": "Self-evaluation must not be accepted.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-005-attempt-001"]
+    },
+    "recovery": {
+      "level": null,
+      "rationale": "No recovery event occurred; this dimension is unknown.",
+      "evidence_refs": []
+    }
+  },
+  "findings": [],
+  "metrics": {
+    "repair_rounds": 0,
+    "duration_seconds": null,
+    "token_usage": null
+  },
+  "benchmark": null,
+  "notes": "Invalid: evaluator equals agent."
+}

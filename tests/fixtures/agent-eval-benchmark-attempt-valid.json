@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "eval-benchmark-attempt-001",
+  "mode": "benchmark",
+  "stage": "attempt",
+  "task_id": "swe-lite-case-001",
+  "attempt_id": "attempt-001",
+  "goal_ref": "swe-lite-case-001",
+  "agent": "backend-1",
+  "evaluator": "coordinator",
+  "reviewer": null,
+  "task_type": "backend",
+  "complexity": "medium",
+  "created_at": "2026-11-24T10:30:00Z",
+  "evidence": {
+    "dispatch_ref": ".herdr/dispatch-ledger.jsonl#dispatch-swe-lite-case-001-attempt-001",
+    "result_ref": "/tmp/herdr-result-swe-lite-case-001-attempt-001.json",
+    "review_ref": null,
+    "business_acceptance_ref": null,
+    "verification": [
+      {
+        "acceptance_id": "AC-1",
+        "command": "python3 -m unittest discover -s tests -v",
+        "cwd": "/Users/example/benchmark",
+        "exit_code": 0,
+        "test_count": 41,
+        "output_ref": "/tmp/herdr-verify-swe-lite-case-001-attempt-001.log"
+      }
+    ]
+  },
+  "gates": {
+    "authorization": "pass",
+    "external_impact": "pass",
+    "write_scope": "pass",
+    "evidence_integrity": "pass",
+    "coordinator_rerun": "pass",
+    "independent_review": "pending",
+    "business_acceptance": "pending"
+  },
+  "dimensions": {
+    "goal_alignment": {
+      "level": 2,
+      "rationale": "The benchmark attempt is still in progress.",
+      "evidence_refs": ["/tmp/herdr-verify-swe-lite-case-001-attempt-001.log"]
+    },
+    "implementation_correctness": {
+      "level": 2,
+      "rationale": "Tests pass but review is pending.",
+      "evidence_refs": ["/tmp/herdr-verify-swe-lite-case-001-attempt-001.log"]
+    },
+    "verification_discipline": {
+      "level": 2,
+      "rationale": "Tests were rerun by the coordinator.",
+      "evidence_refs": ["/tmp/herdr-verify-swe-lite-case-001-attempt-001.log"]
+    },
+    "communication_handoff": {
+      "level": 1,
+      "rationale": "The handoff is incomplete.",
+      "evidence_refs": ["/tmp/herdr-result-swe-lite-case-001-attempt-001.json"]
+    },
+    "recovery": {
+      "level": null,
+      "rationale": "No recovery event occurred; this dimension is unknown.",
+      "evidence_refs": []
+    }
+  },
+  "findings": [],
+  "metrics": {
+    "repair_rounds": 0,
+    "duration_seconds": null,
+    "token_usage": null
+  },
+  "benchmark": {
+    "benchmark_id": "swe-lite",
+    "case_version": "1.2.0",
+    "trial_id": "trial-002"
+  },
+  "notes": "Valid benchmark attempt; rollup must count it as a skipped attempt."
+}

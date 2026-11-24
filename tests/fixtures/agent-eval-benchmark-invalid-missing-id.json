@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "eval-benchmark-invalid-001",
+  "mode": "benchmark",
+  "stage": "final",
+  "task_id": "swe-lite-case-002",
+  "attempt_id": "attempt-001",
+  "goal_ref": "swe-lite-case-002",
+  "agent": "backend-1",
+  "evaluator": "coordinator",
+  "reviewer": "reviewer-1",
+  "task_type": "backend",
+  "complexity": "medium",
+  "created_at": "2026-11-24T10:35:00Z",
+  "evidence": {
+    "dispatch_ref": ".herdr/dispatch-ledger.jsonl#dispatch-swe-lite-case-002-attempt-001",
+    "result_ref": "/tmp/herdr-result-swe-lite-case-002-attempt-001.json",
+    "review_ref": ".herdr/dispatch-ledger.jsonl#review-swe-lite-case-002-attempt-001",
+    "business_acceptance_ref": ".herdr/dispatch-ledger.jsonl#business-swe-lite-case-002-attempt-001",
+    "verification": [
+      {
+        "acceptance_id": "AC-1",
+        "command": "python3 -m unittest discover -s tests -v",
+        "cwd": "/Users/example/benchmark",
+        "exit_code": 0,
+        "test_count": 41,
+        "output_ref": "/tmp/herdr-verify-swe-lite-case-002-attempt-001.log"
+      }
+    ]
+  },
+  "gates": {
+    "authorization": "pass",
+    "external_impact": "pass",
+    "write_scope": "pass",
+    "evidence_integrity": "pass",
+    "coordinator_rerun": "pass",
+    "independent_review": "pass",
+    "business_acceptance": "pass"
+  },
+  "dimensions": {
+    "goal_alignment": {
+      "level": 3,
+      "rationale": "The record is invalid only because case_version is missing.",
+      "evidence_refs": ["/tmp/herdr-verify-swe-lite-case-002-attempt-001.log"]
+    },
+    "implementation_correctness": {
+      "level": 3,
+      "rationale": "The record is invalid only because case_version is missing.",
+      "evidence_refs": ["/tmp/herdr-verify-swe-lite-case-002-attempt-001.log"]
+    },
+    "verification_discipline": {
+      "level": 3,
+      "rationale": "The record is invalid only because case_version is missing.",
+      "evidence_refs": ["/tmp/herdr-verify-swe-lite-case-002-attempt-001.log"]
+    },
+    "communication_handoff": {
+      "level": 3,
+      "rationale": "The record is invalid only because case_version is missing.",
+      "evidence_refs": ["/tmp/herdr-verify-swe-lite-case-002-attempt-001.log"]
+    },
+    "recovery": {
+      "level": null,
+      "rationale": "No recovery event occurred; this dimension is unknown.",
+      "evidence_refs": []
+    }
+  },
+  "findings": [],
+  "metrics": {
+    "repair_rounds": 0,
+    "duration_seconds": null,
+    "token_usage": null
+  },
+  "benchmark": {
+    "benchmark_id": "swe-lite",
+    "trial_id": "trial-003"
+  },
+  "notes": "Invalid: benchmark.case_version is missing."
+}

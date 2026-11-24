@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "eval-project-final-blocking-001",
+  "mode": "project",
+  "stage": "final",
+  "task_id": "PROJ-003",
+  "attempt_id": "attempt-001",
+  "goal_ref": "PROJ-003",
+  "agent": "backend-1",
+  "evaluator": "coordinator",
+  "reviewer": "reviewer-1",
+  "task_type": "backend",
+  "complexity": "medium",
+  "created_at": "2026-11-24T10:10:00Z",
+  "evidence": {
+    "dispatch_ref": ".herdr/dispatch-ledger.jsonl#dispatch-PROJ-003-attempt-001",
+    "result_ref": "/tmp/herdr-result-PROJ-003-attempt-001.json",
+    "review_ref": ".herdr/dispatch-ledger.jsonl#review-PROJ-003-attempt-001",
+    "business_acceptance_ref": ".herdr/dispatch-ledger.jsonl#business-PROJ-003-attempt-001",
+    "verification": [
+      {
+        "acceptance_id": "AC-1",
+        "command": "./scripts/verify.sh",
+        "cwd": "/Users/example/project",
+        "exit_code": 0,
+        "test_count": 30,
+        "output_ref": "/tmp/herdr-verify-PROJ-003-attempt-001.log"
+      }
+    ]
+  },
+  "gates": {
+    "authorization": "pass",
+    "external_impact": "pass",
+    "write_scope": "pass",
+    "evidence_integrity": "pass",
+    "coordinator_rerun": "pass",
+    "independent_review": "pass",
+    "business_acceptance": "pass"
+  },
+  "dimensions": {
+    "goal_alignment": {
+      "level": 3,
+      "rationale": "Dimension levels are deliberately maximal.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-003-attempt-001"]
+    },
+    "implementation_correctness": {
+      "level": 3,
+      "rationale": "Dimension levels are deliberately maximal.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-003-attempt-001"]
+    },
+    "verification_discipline": {
+      "level": 3,
+      "rationale": "Dimension levels are deliberately maximal.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-003-attempt-001"]
+    },
+    "communication_handoff": {
+      "level": 3,
+      "rationale": "Dimension levels are deliberately maximal.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-003-attempt-001"]
+    },
+    "recovery": {
+      "level": 3,
+      "rationale": "Dimension levels are deliberately maximal.",
+      "evidence_refs": [".herdr/dispatch-ledger.jsonl#dispatch-PROJ-003-attempt-001"]
+    }
+  },
+  "findings": [
+    {
+      "severity": "high",
+      "category": "correctness",
+      "summary": "An unhandled branch reports success without performing the write.",
+      "evidence_ref": ".herdr/dispatch-ledger.jsonl#review-PROJ-003-attempt-001",
+      "attribution": "agent",
+      "blocking": true,
+      "gate": "independent_review"
+    }
+  ],
+  "metrics": {
+    "repair_rounds": 1,
+    "duration_seconds": 240,
+    "token_usage": 8000
+  },
+  "benchmark": null,
+  "notes": "Blocking agent-attributed finding with maximal dimension levels."
+}
