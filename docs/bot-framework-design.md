@@ -1,8 +1,8 @@
 # 通用 Bot 自动创建与运行框架：从远景到落地
 
-状态：**阶段 1、阶段 2 第一步与元数据补齐已实施；常驻运行时、Agent 调用和分诊仍未实施**。已落地定义校验、批准快照、`fake` 适配器、`run --once`、本地状态/健康/生命周期、无模型测试，以及真实 `feishu` 适配器的只读单次拉取、作者姓名缓存、附件判重键和项目/用户批准绑定；不启动常驻循环、不调用模型、不创建或分诊真实 bot。
+状态：**阶段 1、阶段 2 第一步、元数据补齐与只读常驻采集已实施；Agent 调用和分诊仍未实施**。已落地定义校验、批准快照、`fake` 适配器、`run --once`/`run --resident`、单实例锁、心跳与租约、健康/生命周期、无模型测试，以及真实 `feishu` 适配器的只读拉取、作者姓名缓存、附件判重键和项目/用户批准绑定；不调用模型、不创建或分诊真实 bot。
 
-阶段 1 实现位置：`scripts/bot.py`、`scripts/bot_schema.py`、`scripts/bot_runtime.py`、`scripts/bot_adapters/`、`skills/project-collaboration/scripts/bot.sh`、`skills/project-collaboration/references/bot-framework.md`、`templates/bot-definition.json`、`templates/bot-policy.json`、`tests/test_bot_*.py`。阶段 2 第一步实现位置：`scripts/bot_adapters/feishu_sync.py`、`tests/test_feishu_adapter.py`；真实只读验收只在临时项目运行，结果不进入公共仓。
+阶段 1 实现位置：`scripts/bot.py`、`scripts/bot_schema.py`、`scripts/bot_runtime.py`、`scripts/bot_adapters/`、`skills/project-collaboration/scripts/bot.sh`、`skills/project-collaboration/references/bot-framework.md`、`templates/bot-definition.json`、`templates/bot-policy.json`、`tests/test_bot_*.py`。阶段 2 第一步实现位置：`scripts/bot_adapters/feishu_sync.py`、`tests/test_feishu_adapter.py`。常驻采集实现位置：`scripts/bot_runtime.py` 的 `run_resident`、`scripts/bot.py` 的 `--resident`、`tests/test_bot_resident.py`；真实只读验收只在临时项目运行，结果不进入公共仓。
 
 调研基线：DS-Bot（`github.com/Fei-Craft/DS-Bot`，commit `d104d9c`）、OpenMausBot（`github.com/milind-soni/OpenMausBot`）、Hermes Bot Mode（`github.com/NousResearch/Hermes-Bot-Mode`）。三者都是桌面应用或桌面插件，形态与本仓不同；本文只抽取可复用的机制，不复制产品。
 
@@ -12,8 +12,8 @@
 2. **Bot 的长期身份与模型的常驻会话是两件事。** Bot 的定义、状态、游标、事件、记忆和报告长期存在；模型会话按批创建、按需恢复。默认不需要一个永远开着的模型会话。只有交互式 bot 或需要连续探索的 bot 才考虑常驻模型会话，而且它是另一种运行时，不是默认形态。
 3. **创建 Bot 与运行 Bot 分开。** Agent 可以起草、校验、解释差异和请求批准；批准、启动、扩权、外部动作和回收是独立门禁。Bot 不能创建 bot，不能修改自己的定义，不能自行扩权。
 4. **公共仓只放规范、Schema、CLI、占位模板和测试。** 项目 ID、人员 ID、路径、凭据、游标、事件、记忆和报告都留在使用方项目的本地目录。换项目只改配置，不改代码。
-5. **MVP 只做“通用控制面 + 一个飞书只读实例”。** 先证明定义、批准、锁、游标、批次、分诊、人读报告和异常恢复，再谈第二个适配器、L2 本地动作和多 bot 协作。
-6. **距离目标：阶段 1 与阶段 2 第一步已落地，后续仍未实现。** 已完成 Schema 校验器、批准与生命周期 CLI、单次进程运行时、`fake` 适配器、只读 `feishu` 适配器和无模型测试；还缺常驻运行时、Agent 调用契约、分诊批次、部署与恢复、跨三端契约和真实基准。本文第 16 节给出阶段与进入条件。
+5. **MVP 只做“通用控制面 + 一个飞书只读实例”。** 已证明定义、批准、锁、游标和异常恢复；批次、分诊、人读报告仍未实现，之后才谈第二个适配器、L2 本地动作和多 bot 协作。
+6. **距离目标：阶段 1、阶段 2 第一步和只读常驻采集已落地。** 已完成 Schema 校验器、批准与生命周期 CLI、单次/常驻进程运行时、`fake` 适配器、只读 `feishu` 适配器和无模型测试；还缺 Agent 调用契约、分诊批次、人读报告、跨三端契约和真实基准。本文第 16 节给出阶段与进入条件。
 
 ## 1. 六个问题，先给答案
 
@@ -166,7 +166,7 @@ bot_runtime.py（锁、触发器、事件、批次、恢复、健康）
 
 ```text
 scripts/
-├── bot.py                         # validate/explain/approve/run --once/status/stop/resume
+├── bot.py                         # validate/explain/approve/run --once|--resident/status/stop/resume
 ├── bot_schema.py                  # 定义、策略、路径与摘要校验
 ├── bot_runtime.py                 # 锁、配额、轮询、状态、健康、生命周期
 └── bot_adapters/
@@ -190,10 +190,11 @@ tests/
 ├── test_bot_security.py
 ├── test_bot_wrapper.py
 ├── test_feishu_adapter.py
+├── test_bot_resident.py
 └── fixtures/bot/                  # 合成事件、批准、错误与恢复场景
 ```
 
-仍规划、尚未创建：`feishu-sync.sh`、`references/feishu-sync.md`、场景模板 `templates/bots/*`、常驻运行时、Agent 调用契约和分诊批次。
+仍规划、尚未创建：`feishu-sync.sh`、`references/feishu-sync.md`、场景模板 `templates/bots/*`、Agent 调用契约和分诊批次。常驻只读运行时已创建：`scripts/bot_runtime.py` 的 `run_resident`，入口为 `bot.py run --resident`。
 
 仍只有一个 `project-collaboration` Skill。需要扩展的是包装器、参考文档和无模型测试，不是为每个 bot 新增一份常驻流程正文。
 
@@ -244,7 +245,7 @@ tests/
 
 ### 6.3 命令行入口
 
-阶段 1 已实现 `validate`、`explain`、`approve`、`run --once`、`status`、`stop`、`resume`；完整形态的 `draft`、`start`、`pause`、`retire` 尚未实现。
+已实现 `validate`、`explain`、`approve`、`run --once`、`run --resident`、`status`、`stop`、`resume`；完整形态的 `draft`、`start`、`pause`、`retire` 尚未实现。
 
 ```bash
 # 1. 离线校验；不访问网络
@@ -262,8 +263,9 @@ python3 <PACKAGE_ROOT>/scripts/bot.py approve \
   --approver-ref <LOCAL_USER_REF> \
   --source-ref <MESSAGE_REF>
 
-# 4. 阶段 1 只允许单次运行；启动、暂停、回收尚未实现
+# 4. 单次运行或常驻只读采集；启动、暂停、回收尚未实现
 python3 <PACKAGE_ROOT>/scripts/bot.py run --bot-id <BOT_ID> --once
+python3 <PACKAGE_ROOT>/scripts/bot.py run --bot-id <BOT_ID> --resident --interval-seconds <SECONDS>
 python3 <PACKAGE_ROOT>/scripts/bot.py status --bot-id <BOT_ID>
 python3 <PACKAGE_ROOT>/scripts/bot.py stop --bot-id <BOT_ID>
 python3 <PACKAGE_ROOT>/scripts/bot.py resume --bot-id <BOT_ID>
@@ -612,6 +614,20 @@ start:
   release lock; write lifecycle stopped
 ```
 
+### 9.1.1 当前只读常驻实现
+
+`run --resident` 已实现确定性采集循环，不调用模型：
+
+- 启动时校验批准快照、策略、适配器配置和身份 binding，然后持有 `state_dir/resident.lock` 整个生命周期；同一 Bot 重复启动退出 4。每轮开始前重算同一组摘要，批准过期或漂移进入 `approval_invalidated`、退出 3，不产生新一轮动作。每轮采集另行持有短暂的 state 锁和 `max_active_bots` 配额槽，因此 `stop`/`resume` 不被常驻锁阻塞。
+- 间隔由 `--interval-seconds` 或定义中的 interval 触发器提供；`--max-rounds` 只用于受控测试。间隔等待使用可被信号唤醒的 `Event.wait`。
+- `state_dir/resident.json` 记录 `state`、PID、启动/心跳时间、租约到期、停止原因；`health.json` 同步守护进程 PID 和轮次状态。
+- 认证失效立即写 `paused`/`auth_required` 并退出 6，不自动登录、不继续轮询；恢复登录后 `resume` 从原游标继续。
+- 普通失败按 1 秒起、上限 30 秒指数退避；连续失败保留 `consecutive_failures`，成功后重置。
+- `state_dir/run.log` 每轮只写开始/结束、事件增量、游标摘要哈希和错误码，不写评论正文、作者或附件 URL。
+- SIGTERM/SIGINT 触发收尾：结束当前轮、写 stopped、保留游标和事件；重启后已消费事件不重放。
+
+停止和恢复仍走 `state.json`：`stop` 写 `stopped` 并唤醒心跳等待，`resume` 清认证失败标记后写 `running`。
+
 ### 9.2 锁与租约
 
 - 每个 bot 一个项目级锁：文件锁或目录锁；包含 `bot_id`、PID、主机、启动时间、租约到期。
@@ -832,7 +848,7 @@ python3 <PACKAGE_ROOT>/scripts/bot.py run --bot-id <BOT_ID> --once
 ### 12.3 拓扑 B：Herdr pane（推荐的项目内常驻）
 
 1. 确认 `test "${HERDR_ENV:-}" = 1`；失败则停止，不探测其他会话。
-2. 从批准快照启动 `bot.py run --bot-id <BOT_ID>`，在专用 pane 中运行。
+2. 从批准快照启动 `bot.py run --resident --bot-id <BOT_ID>`，在专用 pane 中运行；重复启动会因单实例锁退出 4。
 3. pane 标题、cwd、bot_id、资源归属写入 registry；只回收本 bot 创建且已停止的 pane。
 4. 停止顺序：`bot.py pause/stop` → 等待安全点 → 确认进程退出 → 关闭本次创建的 pane。
 5. 乱码、OOM、崩溃：先停止输入，按 Herdr 事故流程只读取证；不盲目重发，不关闭非本次资源。
@@ -842,7 +858,7 @@ Herdr 是可选拓扑，不是硬依赖。没有 Herdr 时，同一 CLI 可由 c
 ### 12.4 拓扑 C：cron / launchd / systemd（无头常驻）
 
 - cron 每次调用 `bot.py run --once`，由锁保证不重叠；适合间隔不小于 1 分钟。
-- launchd/systemd 运行 `bot.py run --foreground`，由 supervisor 重启；必须有退避和最大重启次数。
+- launchd/systemd 运行 `bot.py run --resident`，由 supervisor 守护；进程内已有退避和认证停止，supervisor 仍需设最大重启次数。
 - 退出码和 `health.json` 是主要观测；不要只依赖进程存活。
 - 认证失效时不要无限重试；进入 `degraded` 并等待人工。
 
@@ -995,27 +1011,26 @@ MVP 只需要：
 | --- | --- |
 | 目标模型、边界、场景、部署、运维设计 | 已有（本文） |
 | 飞书场景配置、游标、分诊、人读输出设计 | 已有（`docs/feishu-sync-design.md`） |
-| Bot Definition Schema | 只有文档示例，没有解析器 |
-| 批准/生命周期 CLI | 未实现 |
-| 确定性 Runtime | 未实现 |
-| 适配器接口与飞书适配器 | 未实现 |
-| 锁、游标、批次、恢复 | 未实现 |
+| Bot Definition Schema | 已实现（`bot_schema.py` + 模板 + 测试） |
+| 批准/生命周期 CLI | 已实现（validate/explain/approve/run/status/stop/resume） |
+| 确定性 Runtime | 已实现单次与只读常驻；批次/Agent 未实现 |
+| 适配器接口与飞书适配器 | 已实现 fake 与 feishu 只读适配器 |
+| 锁、游标、恢复 | 已实现单实例锁、配额、逐项游标、心跳/租约、认证停止、退避 |
 | Agent 调用契约（Claude/Pi/Codex） | 未验证 |
-| 三端包装器与安装副本测试 | 未实现 |
+| 三端包装器与安装副本测试 | 已有 `bot.sh` 与包装器测试；三端安装副本未单独验证 |
 | 部署（Herdr/cron/launchd/systemd） | 只有设计 |
 | 运维手册与事故演练 | 只有设计 |
 | 真实基准与验收 | 无 |
 
 ### 16.2 关键缺口
 
-1. **Schema 与校验器**：没有它，批准和运行时都没有可信输入。
-2. **批准记录与摘要**：没有它，“自动创建”会退化成“agent 自己决定”。
-3. **确定性运行时**：锁、触发器、游标、批次、恢复、健康，是 bot 能不能长期跑的核心。
-4. **适配器接口**：没有稳定接口，第二个场景就会复制一套逻辑。
-5. **Agent 调用契约**：三端 CLI 的非交互调用、会话恢复、权限模式、输出解析都还没有实测。
-6. **部署与恢复**：Herdr pane、cron、launchd、systemd 的锁和重启语义不同，必须逐个验证。
-7. **可观测与验收**：没有健康、滞后、失败分类，运维只能靠“看起来还在跑”。
-8. **基准**：需要固定场景、固定版本、固定预算的 A/B，才能证明框架比“人工写个脚本”更好。
+1. **Agent 调用契约**：三端 CLI 的非交互调用、会话恢复、权限模式、输出解析都还没有实测。
+2. **批次与分诊**：事件已能稳定采集，但批次、结构化分诊输出、幂等处置尚未实现。
+3. **人读报告**：机器事件与面板摘要已有基础，但按批次生成的报告、空结果/异常区分尚未实现。
+4. **部署与恢复**：Herdr pane、cron、launchd、systemd 的锁和重启语义不同，必须逐个验证。
+5. **可观测与验收**：健康、滞后、失败分类已有字段，但告警、长期运行指标和事故演练未完成。
+6. **多项目与多 bot 隔离**：`max_bots`/`max_active_bots` 已执行，但多项目并发、身份隔离和成本边界未实测。
+7. **基准**：需要固定场景、固定版本、固定预算的 A/B，才能证明框架比“人工写个脚本”更好。
 
 ### 16.3 阶段路线
 
@@ -1046,11 +1061,12 @@ MVP 只需要：
 
 - `bot_adapters/feishu_sync.py`：配置与环境变量解析、只读命令封装、分页、评论去重、逐项游标、错误分类；
 - 合成 fixtures 覆盖认证失效、token 过期、重复评论、分页边界、配置缺失、环境变量覆盖和二次零新增；
-- 单次 `once` 的真实只读拉取验收（真实数据只落在临时项目，不进公共仓）。
+- 单次 `once` 的真实只读拉取验收（真实数据只落在临时项目，不进公共仓）；
+- 只读常驻采集：`run --resident`、单实例 resident 锁、心跳/租约、认证停止、指数退避、run.log、SIGTERM 收尾、重启从游标续跑，以及真实短间隔多轮验收。
 
-尚未交付：常驻/定时触发、批次、分诊 Agent 调用、人读报告、真实项目长期连续验收。
+尚未交付：项目级定时部署（Herdr/cron/launchd/systemd）、批次、分诊 Agent 调用、人读报告、真实项目长期连续验收。
 
-退出条件（完整阶段 2）：连续多轮 `once` 不重复、不漏项；认证失效不推进游标；报告与机器结论同源；不写飞书。
+退出条件（完整阶段 2）：连续多轮（单次或常驻）不重复、不漏项；认证失效不推进游标；报告与机器结论同源；不写飞书。
 
 不做：外部写、自动回复、L2。
 

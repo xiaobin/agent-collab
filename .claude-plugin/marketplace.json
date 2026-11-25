@@ -8,7 +8,7 @@
     {
       "name": "agent-collab",
       "source": "./",
-      "version": "0.4.4",
+      "version": "0.4.5",
       "description": "Shared project collaboration workflow for the team"
     }
   ]

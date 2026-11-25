@@ -19,12 +19,15 @@ from bot_runtime import (
     append_lifecycle,
     approved_path,
     bot_dir,
+    load_resident,
     load_state,
     now_iso,
+    pid_alive,
     read_bytes,
     read_json,
     resume_bot,
     run_once,
+    run_resident,
     stop_bot,
     write_json,
 )
@@ -102,7 +105,7 @@ def cmd_explain(args: argparse.Namespace) -> int:
     print(f"Autonomy ceiling: {permissions.get('autonomy_ceiling')}")
     print(f"Workspace: {definition.get('workspace', {}).get('root')}")
     print("Outputs: " + ", ".join(str(output.get("type")) for output in definition.get("outputs", [])))
-    print("Stage-one note: run supports only --once and never calls a model.")
+    print("Stage-two note: run supports --once or --resident and never calls a model.")
     return EXIT_OK
 
 
@@ -231,8 +234,8 @@ def _approval_error(snapshot: Any, project_root: Path, bot_id: str, revision: in
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    if not args.once:
-        print("ERROR: resident mode is not implemented in stage one; use --once", file=sys.stderr)
+    if args.once == args.resident:
+        print("ERROR: choose exactly one of --once or --resident", file=sys.stderr)
         return EXIT_INVALID
     problem = _check_bot_id(args.bot_id)
     if problem:
@@ -293,7 +296,74 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"ERROR: cannot verify approval inputs: {exc}", file=sys.stderr)
         return EXIT_APPROVAL
 
+    def resident_preflight() -> str | None:
+        try:
+            current = read_json(project_root, snapshot_path)
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+            return f"cannot read approval snapshot: {exc}"
+        problem = _approval_error(current, project_root, args.bot_id, revision)
+        if problem:
+            return problem
+        try:
+            current_definition = read_json(project_root, definition_path)
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+            return f"cannot read current definition: {exc}"
+        if (
+            current.get("definition_sha256") != definition_digest(current_definition)
+            or current.get("definition") != current_definition
+        ):
+            return "definition changed on disk since approval; re-approve the bot"
+        try:
+            if current.get("policy_sha256") != _file_sha256(project_root, project_root / ".herdr" / "bot-policy.json"):
+                return "project policy changed since approval; re-approve the bot"
+            adapter_config_path = project_root / definition["adapter"]["config_ref"]
+            if current.get("adapter_config_sha256") != _file_sha256(project_root, adapter_config_path):
+                return "adapter config changed since approval; re-approve the bot"
+            adapter_config = json.loads(read_bytes(project_root, adapter_config_path))
+            if not isinstance(adapter_config, dict):
+                return "adapter config must be an object"
+            binding = get_adapter(definition["adapter"]["name"]).approval_binding(adapter_config)
+            if current.get("binding") != binding:
+                return "approval binding changed; re-approve the bot"
+        except AdapterError as exc:
+            return str(exc)
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+            return f"cannot verify approval inputs: {exc}"
+        return None
+
     try:
+        if args.resident:
+            interval = args.interval_seconds
+            if interval is None:
+                interval = next(
+                    (trigger.get("interval_seconds") for trigger in definition.get("triggers", [])
+                     if isinstance(trigger, dict) and trigger.get("type") == "interval"),
+                    None,
+                )
+            if interval is None:
+                print("ERROR: resident mode requires --interval-seconds or an interval trigger", file=sys.stderr)
+                return EXIT_INVALID
+            code = run_resident(
+                project_root,
+                definition,
+                result.policy,
+                interval_seconds=interval,
+                max_rounds=args.max_rounds,
+                preflight=resident_preflight,
+            )
+            if code == EXIT_AUTH:
+                print(
+                    "ERROR: authentication required; polling stopped and the bot is paused. "
+                    "Re-authenticate with meegle, then run `bot.py resume`.",
+                    file=sys.stderr,
+                )
+            elif code == EXIT_APPROVAL:
+                print(
+                    "ERROR: approval invalidated; polling stopped before the next round. "
+                    "Re-approve the current revision, then run `bot.py resume`.",
+                    file=sys.stderr,
+                )
+            return code
         payload, code = run_once(project_root, definition, result.policy)
     except LockedError as exc:
         print(f"ERROR: bot is locked: {exc}", file=sys.stderr)
@@ -301,6 +371,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     except StateBlockedError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return EXIT_APPROVAL
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return EXIT_INVALID
     except (OSError, RuntimeError) as exc:
         print(f"ERROR: runtime failure: {exc}", file=sys.stderr)
         return EXIT_RUNTIME
@@ -310,12 +383,39 @@ def cmd_run(args: argparse.Namespace) -> int:
     return code
 
 
+def _resident_view(resident: dict[str, Any]) -> dict[str, Any]:
+    view = dict(resident)
+    if view.get("state") not in {"starting", "running", "sleeping", "backoff", "stopping"}:
+        return view
+    if not pid_alive(view.get("pid")):
+        view["state"] = "stale"
+        view["stale_reason"] = "process_not_running"
+        return view
+    lease = view.get("lease_expires_at")
+    if isinstance(lease, str):
+        try:
+            expires = datetime.fromisoformat(lease.replace("Z", "+00:00"))
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires <= datetime.now(timezone.utc):
+                view["state"] = "stale"
+                view["stale_reason"] = "lease_expired"
+        except ValueError:
+            view["state"] = "stale"
+            view["stale_reason"] = "invalid_lease"
+    return view
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     problem = _check_bot_id(args.bot_id)
     if problem:
         print(f"ERROR: {problem}", file=sys.stderr)
         return EXIT_INVALID
-    print(json.dumps(load_state(args.project_root.resolve(), args.bot_id), ensure_ascii=False, sort_keys=True))
+    payload = load_state(args.project_root.resolve(), args.bot_id)
+    resident = load_resident(args.project_root.resolve(), args.bot_id)
+    if resident:
+        payload["resident"] = _resident_view(resident)
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return EXIT_OK
 
 
@@ -375,10 +475,14 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--source-ref", default=None)
     approve.add_argument("--expires-at", default=None)
     approve.set_defaults(func=cmd_approve)
-    run = subparsers.add_parser("run", help="run one polling pass")
+    run = subparsers.add_parser("run", help="run one polling pass or a resident polling loop")
     run.add_argument("--project-root", default=Path("."), type=Path)
     run.add_argument("--bot-id", required=True)
-    run.add_argument("--once", action="store_true")
+    mode = run.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--once", action="store_true", help="poll once and exit")
+    mode.add_argument("--resident", action="store_true", help="poll repeatedly until stopped")
+    run.add_argument("--interval-seconds", type=float, default=None, help="override the interval trigger for resident mode")
+    run.add_argument("--max-rounds", type=int, default=None, help="stop after this many resident rounds (for controlled runs)")
     run.set_defaults(func=cmd_run)
     status = subparsers.add_parser("status", help="print local bot state")
     status.add_argument("--project-root", default=Path("."), type=Path)

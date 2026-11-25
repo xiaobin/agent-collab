@@ -2,6 +2,26 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.5] - 2026-11-25
+
+### Added
+
+- `run --resident` 只读常驻采集：按 `--interval-seconds` 或 interval 触发器重复执行现有拉取，追加 `events.jsonl`、推进游标、更新状态和健康；`--max-rounds` 仅用于受控验证。
+- 单实例：常驻循环持有 `state/resident.lock` 整个生命周期，重复启动退出 4；`stop`/`resume` 通过短 state 锁工作，不需要等待常驻睡眠。
+- 健康与恢复：`resident.json` 记录 PID、启动/心跳时间、租约和停止原因；`health.json` 同步守护状态；SIGTERM/SIGINT 在当前轮结束后收尾；重启从游标继续，已消费事件不重放。
+- 认证失效立即写 `paused`/`auth_required` 并退出 6，不自动登录、不继续轮询；普通失败指数退避（1 秒起、30 秒封顶）。
+- 每轮开始前重算批准摘要、定义/策略/适配器哈希和身份 `binding`；过期或任一文件漂移写 `approval_invalidated`、退出 3，不产生新一轮动作。
+- 收尾写状态时持短 state 锁，避免并发 `once`/`stop`/`resume` 的新游标被旧状态覆盖；`status` 核对 PID 与租约，死进程或过期租约显示 `stale`，不假报 `running`。
+- `resident.json` 中存活 PID 作为第二道单实例检查：`resident.lock` 被手动删除后，重复启动仍退出 4。
+- `--max-rounds` 内全部轮次失败时返回最后一次失败码并写 `degraded`/`failed`，不再以 0/stopped 伪装成功。
+- `state/run.log` 记录每轮开始/结束、事件增量、游标摘要哈希和错误码，不写评论正文、作者或附件 URL。
+
+### Compatibility
+
+- 现有 `run --once` 行为不变；新增 `--resident`、`--interval-seconds`、`--max-rounds`，三者与 `--once` 的组合由 CLI 明确校验。
+- `status` 输出在有 `resident.json` 时附加 `resident` 字段；既有字段保留。
+- 常驻模式仍只读、不调用模型、不做分诊或人读报告；Herdr/cron 定时部署仍未实现。
+
 ## [0.4.4] - 2026-11-25
 
 ### Added
