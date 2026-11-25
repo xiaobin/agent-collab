@@ -29,6 +29,7 @@ from bot_runtime import (
     write_json,
 )
 from bot_schema import definition_digest, validate_definition
+from bot_adapters import AdapterError, get_adapter
 
 EXIT_OK = 0
 EXIT_INVALID = 2
@@ -148,8 +149,16 @@ def cmd_approve(args: argparse.Namespace) -> int:
     target = approved_path(project_root, bot_id, revision)
     try:
         policy_sha256 = _file_sha256(project_root, project_root / ".herdr" / "bot-policy.json")
-        adapter_config_sha256 = _file_sha256(project_root, (project_root / definition["adapter"]["config_ref"]).resolve())
-    except (OSError, RuntimeError) as exc:
+        adapter_config_path = project_root / definition["adapter"]["config_ref"]
+        adapter_config_sha256 = _file_sha256(project_root, adapter_config_path)
+        adapter_config = json.loads(read_bytes(project_root, adapter_config_path))
+        if not isinstance(adapter_config, dict):
+            raise ValueError("adapter config must be an object")
+        binding = get_adapter(definition["adapter"]["name"]).approval_binding(adapter_config)
+    except AdapterError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return exc.exit_code if exc.exit_code in (EXIT_INVALID, EXIT_APPROVAL) else EXIT_INVALID
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: cannot read approval inputs: {exc}", file=sys.stderr)
         return EXIT_INVALID
     snapshot = {
@@ -174,6 +183,7 @@ def cmd_approve(args: argparse.Namespace) -> int:
         "definition_sha256": definition_digest(definition),
         "policy_sha256": policy_sha256,
         "adapter_config_sha256": adapter_config_sha256,
+        "binding": binding,
         "definition": definition,
     }
     try:
@@ -206,6 +216,8 @@ def _approval_error(snapshot: Any, project_root: Path, bot_id: str, revision: in
         return "approval belongs to a different run user"
     if not isinstance(approval.get("scope"), dict):
         return "approval scope is required"
+    if not isinstance(snapshot.get("binding"), dict):
+        return "approval snapshot has no binding; re-approve the bot"
     try:
         _parse_time(approval.get("approved_at"), "approved_at", allow_none=False)
         expires_at = _parse_time(approval.get("expires_at"), "expires_at")
@@ -263,10 +275,21 @@ def cmd_run(args: argparse.Namespace) -> int:
         if snapshot.get("policy_sha256") != _file_sha256(project_root, project_root / ".herdr" / "bot-policy.json"):
             print("ERROR: project policy changed since approval; re-approve the bot", file=sys.stderr)
             return EXIT_APPROVAL
-        if snapshot.get("adapter_config_sha256") != _file_sha256(project_root, (project_root / definition["adapter"]["config_ref"]).resolve()):
+        adapter_config_path = project_root / definition["adapter"]["config_ref"]
+        if snapshot.get("adapter_config_sha256") != _file_sha256(project_root, adapter_config_path):
             print("ERROR: adapter config changed since approval; re-approve the bot", file=sys.stderr)
             return EXIT_APPROVAL
-    except (OSError, RuntimeError) as exc:
+        adapter_config = json.loads(read_bytes(project_root, adapter_config_path))
+        if not isinstance(adapter_config, dict):
+            raise ValueError("adapter config must be an object")
+        binding = get_adapter(definition["adapter"]["name"]).approval_binding(adapter_config)
+        if snapshot.get("binding") != binding:
+            print("ERROR: approval binding changed (project_key/user_key); re-approve the bot", file=sys.stderr)
+            return EXIT_APPROVAL
+    except AdapterError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return exc.exit_code if exc.exit_code in (EXIT_INVALID, EXIT_APPROVAL) else EXIT_APPROVAL
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: cannot verify approval inputs: {exc}", file=sys.stderr)
         return EXIT_APPROVAL
 

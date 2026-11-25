@@ -1,7 +1,7 @@
 """Read-only Feishu Project adapter backed by the meegle CLI.
 
-Only auth status, user me, mywork todo, comment list and workitem get are
-used.  There is no retry loop, login flow or write command in this module.
+Only auth status, user me, user search, mywork todo, comment list and workitem
+get are used.  There is no retry loop, login flow or write command here.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,8 @@ _ENV_KEYS = {
     "MEEGLE_COMMENT_MAX_PAGES": "comment_max_pages",
     "MEEGLE_TIMEOUT_SECONDS": "timeout_seconds",
     "MEEGLE_FETCH_DETAILS": "fetch_details",
+    "MEEGLE_RESOLVE_USER_NAMES": "resolve_user_names",
+    "MEEGLE_USER_CACHE_PATH": "user_cache_path",
 }
 _DEFAULTS = {
     "meegle_bin": "meegle",
@@ -33,9 +37,20 @@ _DEFAULTS = {
     "comment_max_pages": 20,
     "timeout_seconds": 30,
     "fetch_details": True,
+    "resolve_user_names": True,
+    "user_cache_path": "state/user-cache.json",
+    "user_cache_ttl_seconds": 86400,
+    "user_cache_miss_ttl_seconds": 300,
 }
 _AUTH_MARKERS = ("401", "token expired", "unauthorized", "not logged in", "authentication expired")
 _MENTION_PATTERN = re.compile(r"@[^\s@]+")
+_USER_BATCH = 20
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _config(config: dict[str, Any]) -> dict[str, Any]:
@@ -45,15 +60,15 @@ def _config(config: dict[str, Any]) -> dict[str, Any]:
         value = os.environ.get(env_name)
         if value is not None and value != "":
             merged[key] = value
-    for key in ("max_pages", "comment_max_pages", "timeout_seconds"):
+    for key in ("max_pages", "comment_max_pages", "timeout_seconds", "user_cache_ttl_seconds", "user_cache_miss_ttl_seconds"):
         try:
             merged[key] = int(merged[key])
         except (TypeError, ValueError) as exc:
             raise AdapterError("invalid_config", f"feishu adapter: {key} must be an integer", exit_code=2) from exc
         if merged[key] < 1:
             raise AdapterError("invalid_config", f"feishu adapter: {key} must be positive", exit_code=2)
-    if isinstance(merged["fetch_details"], str):
-        merged["fetch_details"] = merged["fetch_details"].strip().lower() in {"1", "true", "yes", "on"}
+    for key in ("fetch_details", "resolve_user_names"):
+        merged[key] = _as_bool(merged[key])
     if merged.get("work_item_id") is not None and not merged.get("project_key"):
         raise AdapterError("invalid_config", "feishu adapter: project_key is required when work_item_id is set", exit_code=2)
     return merged
@@ -83,8 +98,12 @@ def _ref(project_key: str, work_item_id: Any) -> dict[str, str]:
     return {"project_key": str(project_key), "work_item_id": str(work_item_id)}
 
 
+def _attachment_dedupe_key(url: str) -> str:
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+
+
 class FeishuAdapter(Adapter):
-    def _run(self, config: dict[str, Any], args: list[str]) -> dict[str, Any]:
+    def _run(self, config: dict[str, Any], args: list[str], *, allow_list: bool = False) -> Any:
         binary = shutil.which(str(config["meegle_bin"])) or (str(config["meegle_bin"]) if Path(str(config["meegle_bin"])).is_file() else None)
         if not binary:
             raise AdapterError("invalid_config", "feishu adapter: meegle executable not found", exit_code=2)
@@ -105,9 +124,23 @@ class FeishuAdapter(Adapter):
             payload = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
             raise AdapterError("invalid_response", f"feishu adapter: meegle {' '.join(args[:2])} returned invalid JSON", exit_code=5) from exc
+        if allow_list and isinstance(payload, list):
+            return payload
         if not isinstance(payload, dict):
             raise AdapterError("invalid_response", "feishu adapter: meegle response must be a JSON object", exit_code=5)
         return payload
+
+    def approval_binding(self, config: dict[str, Any]) -> dict[str, Any]:
+        cfg = _config(config)
+        project_key = str(cfg.get("project_key") or "").strip()
+        user_key = str(cfg.get("expected_user_key") or "").strip()
+        if not project_key or not user_key:
+            raise AdapterError(
+                "approval_binding_missing",
+                "feishu adapter: project_key and expected_user_key are required for approval; set them in project config or MEEGLE_PROJECT_KEY/MEEGLE_USER_KEY",
+                exit_code=2,
+            )
+        return {"adapter": "feishu", "project_key": project_key, "user_key": user_key}
 
     def _todo_items(self, config: dict[str, Any]) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
@@ -165,8 +198,117 @@ class FeishuAdapter(Adapter):
         }
         return item, detail
 
+    def _cache_path(self, config: dict[str, Any], workspace_root: Path | None, project_root: Path) -> Path:
+        raw = str(config.get("user_cache_path") or "state/user-cache.json")
+        base = (workspace_root or project_root).resolve()
+        target = (base / raw).resolve()
+        if not target.is_relative_to(base):
+            raise AdapterError("invalid_config", "feishu adapter: user_cache_path escapes the workspace", exit_code=2)
+        return target
+
+    @staticmethod
+    def _load_cache(path: Path) -> dict[str, Any]:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
+    def _save_cache(path: Path, payload: dict[str, Any]) -> None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if path.is_symlink():
+                raise AdapterError("invalid_config", "feishu adapter: user cache must not be a symlink", exit_code=2)
+            fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".user-cache.", text=True)
+            try:
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
+                os.replace(temporary, path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        except AdapterError:
+            raise
+        except OSError:
+            # The cache only saves lookups; a failed write must not lose events.
+            return
+
+    @staticmethod
+    def _name_from_row(row: Any) -> tuple[str | None, str | None]:
+        if not isinstance(row, dict):
+            return None, None
+        for field in ("name_cn", "name_en"):
+            value = row.get(field)
+            if isinstance(value, str) and value.strip():
+                return value.strip(), field
+        return None, None
+
+    def _resolve_user_names(self, config: dict[str, Any], keys: list[str], workspace_root: Path | None, project_root: Path) -> dict[str, dict[str, Any]]:
+        unique = sorted({str(key) for key in keys if str(key).strip()})
+        if not unique:
+            return {}
+        if not config.get("resolve_user_names", True):
+            return {key: {"name": None, "status": "disabled", "source": None, "reason": "resolve_user_names=false"} for key in unique}
+
+        cache_path = self._cache_path(config, workspace_root, project_root)
+        cache = self._load_cache(cache_path)
+        users = cache.get("users") if isinstance(cache.get("users"), dict) else {}
+        misses = cache.get("misses") if isinstance(cache.get("misses"), dict) else {}
+        now = time.time()
+        ttl = config["user_cache_ttl_seconds"]
+        miss_ttl = config["user_cache_miss_ttl_seconds"]
+        results: dict[str, dict[str, Any]] = {}
+        pending: list[str] = []
+
+        for key in unique:
+            hit = users.get(key)
+            if isinstance(hit, dict) and isinstance(hit.get("resolved_at"), (int, float)) and now - hit["resolved_at"] <= ttl:
+                name = hit.get("name")
+                if isinstance(name, str) and name.strip():
+                    results[key] = {"name": name, "status": "resolved", "source": hit.get("name_source"), "reason": None}
+                    continue
+            miss = misses.get(key)
+            if isinstance(miss, dict) and isinstance(miss.get("at"), (int, float)) and now - miss["at"] <= miss_ttl:
+                results[key] = {"name": None, "status": "unknown", "source": None, "reason": miss.get("reason", "cached_miss")}
+                continue
+            pending.append(key)
+
+        for offset in range(0, len(pending), _USER_BATCH):
+            chunk = pending[offset:offset + _USER_BATCH]
+            args = ["user", "search", "--project-key", str(config.get("project_key") or "")]
+            for key in chunk:
+                args.extend(["--user-keys", key])
+            try:
+                rows = self._run(config, args, allow_list=True)
+            except AdapterError as exc:
+                if exc.exit_code == 6:
+                    raise
+                reason = f"lookup_failed:{exc.code}"
+                for key in chunk:
+                    results[key] = {"name": None, "status": "unknown", "source": None, "reason": reason}
+                    misses[key] = {"at": now, "reason": reason}
+                continue
+            if not isinstance(rows, list):
+                raise AdapterError("invalid_response", "feishu adapter: user search response must be a list", exit_code=5)
+            by_key = {str(row.get("user_key")): row for row in rows if isinstance(row, dict) and row.get("user_key")}
+            for key in chunk:
+                name, source = self._name_from_row(by_key.get(key))
+                if name:
+                    results[key] = {"name": name, "status": "resolved", "source": source, "reason": None}
+                    users[key] = {"name": name, "name_source": source, "status": by_key[key].get("status"), "resolved_at": now}
+                    misses.pop(key, None)
+                else:
+                    reason = "not_found" if key not in by_key else "empty_name"
+                    results[key] = {"name": None, "status": "unknown", "source": None, "reason": reason}
+                    misses[key] = {"at": now, "reason": reason}
+
+        self._save_cache(cache_path, {"schema_version": 1, "users": users, "misses": misses})
+        return results
+
     def poll(self, *, cursor: Any, config: dict[str, Any], project_root: Path, workspace_root: Path | None = None, read_scope: list[str] | None = None) -> PollResult:
-        del project_root, workspace_root, read_scope
+        del read_scope
         cfg = _config(config)
         auth = self._run(cfg, ["auth", "status"])
         if auth.get("authenticated") is not True:
@@ -187,6 +329,8 @@ class FeishuAdapter(Adapter):
         previous_items = cursor.get("items", {}) if isinstance(cursor, dict) and isinstance(cursor.get("items"), dict) else {}
         next_items: dict[str, Any] = {}
         events: list[dict[str, Any]] = []
+        pending_comments: dict[str, list[dict[str, Any]]] = {}
+        pending_previous: dict[str, dict[str, Any]] = {}
 
         def item_key(item: dict[str, Any]) -> tuple[str, str]:
             info = item.get("work_item_info") if isinstance(item.get("work_item_info"), dict) else {}
@@ -213,6 +357,23 @@ class FeishuAdapter(Adapter):
                     "payload": {**reference, "snapshot": snapshot, "snapshot_sha256": snapshot_hash},
                 })
             comments = self._comments(cfg, project_key, work_item_id)
+            pending_comments[key] = comments
+            pending_previous[key] = previous
+            next_items[key] = {"snapshot_sha256": snapshot_hash, "comment_ids": [], "last_comment_created_at": None}
+
+        creators: list[str] = []
+        for comments in pending_comments.values():
+            for comment in comments:
+                creator = comment.get("creator")
+                if creator and str(creator) not in creators:
+                    creators.append(str(creator))
+        names = self._resolve_user_names(cfg, creators, workspace_root, project_root)
+
+        for key, comments in pending_comments.items():
+            previous = pending_previous[key]
+            project_key, work_item_id = key.split(":", 1)
+            reference = _ref(project_key, work_item_id)
+            source = {"adapter": "feishu", **reference}
             seen = set(previous.get("comment_ids", [])) if isinstance(previous.get("comment_ids"), list) else set()
             for comment in comments:
                 comment_id = str(comment["comment_id"])
@@ -220,6 +381,8 @@ class FeishuAdapter(Adapter):
                     continue
                 content = str(comment.get("content") or "")
                 file_url = str(comment.get("file_url") or "")
+                creator = str(comment.get("creator") or "")
+                identity = names.get(creator, {"name": None, "status": "unknown", "source": None, "reason": "not_queried"})
                 events.append({
                     "event_id": f"comment:{project_key}:{work_item_id}:{comment_id}",
                     "kind": "comment.created",
@@ -229,16 +392,24 @@ class FeishuAdapter(Adapter):
                         "comment_id": comment_id,
                         "created_at": comment.get("created_at"),
                         "creator_user_key": comment.get("creator"),
-                        "creator_name": None,
+                        "creator_name": identity["name"],
+                        "creator_name_status": identity["status"],
+                        "creator_name_source": identity["source"],
+                        "creator_name_reason": identity["reason"],
                         "content": content,
                         "mentions_text": _MENTION_PATTERN.findall(content),
                         "mentions_are_structured": False,
-                        "attachments": [{"name": None, "url": file_url}] if file_url else [],
+                        "attachments": [{
+                            "name": None,
+                            "name_status": "unavailable",
+                            "dedupe_key": _attachment_dedupe_key(file_url),
+                            "url": file_url,
+                        }] if file_url else [],
                     },
                 })
                 seen.add(comment_id)
             next_items[key] = {
-                "snapshot_sha256": snapshot_hash,
+                "snapshot_sha256": next_items[key]["snapshot_sha256"],
                 "comment_ids": sorted(seen),
                 "last_comment_created_at": max((str(item.get("created_at", "")) for item in comments), default=None),
             }

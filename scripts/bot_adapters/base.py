@@ -21,6 +21,11 @@ class PollResult:
 
 
 class Adapter:
+    def approval_binding(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Values that must remain identical between approval and run."""
+        del config
+        return {}
+
     def poll(
         self,
         *,

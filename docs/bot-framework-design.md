@@ -1,6 +1,6 @@
 # 通用 Bot 自动创建与运行框架：从远景到落地
 
-状态：**阶段 1 与阶段 2 第一步已实施；常驻运行时、Agent 调用和分诊仍未实施**。已落地定义校验、批准快照、`fake` 适配器、`run --once`、本地状态/健康/生命周期、无模型测试，以及真实 `feishu` 适配器的只读单次拉取；不启动常驻循环、不调用模型、不创建或分诊真实 bot。
+状态：**阶段 1、阶段 2 第一步与元数据补齐已实施；常驻运行时、Agent 调用和分诊仍未实施**。已落地定义校验、批准快照、`fake` 适配器、`run --once`、本地状态/健康/生命周期、无模型测试，以及真实 `feishu` 适配器的只读单次拉取、作者姓名缓存、附件判重键和项目/用户批准绑定；不启动常驻循环、不调用模型、不创建或分诊真实 bot。
 
 阶段 1 实现位置：`scripts/bot.py`、`scripts/bot_schema.py`、`scripts/bot_runtime.py`、`scripts/bot_adapters/`、`skills/project-collaboration/scripts/bot.sh`、`skills/project-collaboration/references/bot-framework.md`、`templates/bot-definition.json`、`templates/bot-policy.json`、`tests/test_bot_*.py`。阶段 2 第一步实现位置：`scripts/bot_adapters/feishu_sync.py`、`tests/test_feishu_adapter.py`；真实只读验收只在临时项目运行，结果不进入公共仓。
 
@@ -298,6 +298,11 @@ python3 <PACKAGE_ROOT>/scripts/bot.py resume --bot-id <BOT_ID>
   "definition_sha256": "<SHA256>",
   "policy_sha256": "<SHA256>",
   "adapter_config_sha256": "<SHA256>",
+  "binding": {
+    "adapter": "feishu",
+    "project_key": "<PROJECT_KEY>",
+    "user_key": "<USER_KEY>"
+  },
   "definition": {}
 }
 ```
@@ -306,7 +311,7 @@ python3 <PACKAGE_ROOT>/scripts/bot.py resume --bot-id <BOT_ID>
 
 - 摘要按规范化 JSON 计算，排除批准时间等易变字段；任何会影响行为的字段变化都产生新摘要。
 - 项目策略或适配器配置变化也会使批准失效，必须重新批准；阶段 1 在运行前校验三份 SHA-256。
-- 批准绑定 `bot_id`、`revision`、摘要、项目根、运行用户和范围；换项目、换用户、换机器不能复用。
+- 批准绑定 `bot_id`、`revision`、摘要、项目根、运行用户和范围；阶段 2 还绑定适配器声明的 `project_key + user_key`。运行时从当前配置和环境变量重算绑定，与快照不一致退出 3；换项目、换用户、换机器不能复用。
 - 批准可以过期；过期后运行中的实例进入 `approval_invalidated`，停止产生新动作。
 - 批准快照不可变；修订只能新增 revision。
 - 批准记录不是凭据；它不包含 token、密钥或外部系统密码。

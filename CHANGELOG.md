@@ -2,6 +2,21 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.4] - 2026-11-25
+
+### Added
+
+- 飞书适配器通过 `user search` 批量解析评论作者姓名，单次最多 20 个 key；只使用 `name_cn`/`name_en`，不拿登录用户姓名兜底。姓名缓存在工作区 `state/user-cache.json`（`0600`），命中与未命中分开 TTL；未解析事件写 `creator_name=null`、`creator_name_status=unknown` 和原因。
+- 附件事件增加 `name_status=unavailable` 与 `dedupe_key`（`file_url` 的 SHA-256 前缀）；真实接口不返回附件名，`file_url` 可稳定判重但不能当文件名。
+- 批准快照增加 `binding`：`feishu` 绑定 `project_key + user_key`；运行前从当前配置和环境变量重算，任一值变化退出 3，不进入适配器。
+- 真实只读验证：161 条评论姓名解析 161 条、缓存 4 个用户；32 个附件 URL 稳定且判重键唯一；二次运行零新增。
+
+### Compatibility
+
+- 0.4.3 的 `feishu` 批准快照没有 `binding`，升级后需重新批准；`fake` 适配器绑定为空对象，不受影响。
+- 评论事件新增 `creator_name_status`、`creator_name_source`、`creator_name_reason`；附件对象新增 `name_status`、`dedupe_key`。原有字段保留。
+- 未实现常驻循环、Herdr 定时、Agent 调用和分诊批次；公共包仍不包含真实 ID、凭据、游标或事件。
+
 ## [0.4.3] - 2026-11-25
 
 ### Added
