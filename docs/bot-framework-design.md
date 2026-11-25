@@ -1,8 +1,8 @@
 # 通用 Bot 自动创建与运行框架：从远景到落地
 
-状态：**阶段 1 已实施；常驻运行时、Agent 调用和真实适配器仍未实施**。阶段 1 落地了定义校验、批准快照、`fake` 适配器、`run --once`、本地状态/健康/生命周期和无模型测试；不连接真实飞书、不启动常驻循环、不创建真实 bot。
+状态：**阶段 1 与阶段 2 第一步已实施；常驻运行时、Agent 调用和分诊仍未实施**。已落地定义校验、批准快照、`fake` 适配器、`run --once`、本地状态/健康/生命周期、无模型测试，以及真实 `feishu` 适配器的只读单次拉取；不启动常驻循环、不调用模型、不创建或分诊真实 bot。
 
-阶段 1 实现位置：`scripts/bot.py`、`scripts/bot_schema.py`、`scripts/bot_runtime.py`、`scripts/bot_adapters/`、`skills/project-collaboration/scripts/bot.sh`、`skills/project-collaboration/references/bot-framework.md`、`templates/bot-definition.json`、`templates/bot-policy.json`、`tests/test_bot_*.py`。
+阶段 1 实现位置：`scripts/bot.py`、`scripts/bot_schema.py`、`scripts/bot_runtime.py`、`scripts/bot_adapters/`、`skills/project-collaboration/scripts/bot.sh`、`skills/project-collaboration/references/bot-framework.md`、`templates/bot-definition.json`、`templates/bot-policy.json`、`tests/test_bot_*.py`。阶段 2 第一步实现位置：`scripts/bot_adapters/feishu_sync.py`、`tests/test_feishu_adapter.py`；真实只读验收只在临时项目运行，结果不进入公共仓。
 
 调研基线：DS-Bot（`github.com/Fei-Craft/DS-Bot`，commit `d104d9c`）、OpenMausBot（`github.com/milind-soni/OpenMausBot`）、Hermes Bot Mode（`github.com/NousResearch/Hermes-Bot-Mode`）。三者都是桌面应用或桌面插件，形态与本仓不同；本文只抽取可复用的机制，不复制产品。
 
@@ -13,7 +13,7 @@
 3. **创建 Bot 与运行 Bot 分开。** Agent 可以起草、校验、解释差异和请求批准；批准、启动、扩权、外部动作和回收是独立门禁。Bot 不能创建 bot，不能修改自己的定义，不能自行扩权。
 4. **公共仓只放规范、Schema、CLI、占位模板和测试。** 项目 ID、人员 ID、路径、凭据、游标、事件、记忆和报告都留在使用方项目的本地目录。换项目只改配置，不改代码。
 5. **MVP 只做“通用控制面 + 一个飞书只读实例”。** 先证明定义、批准、锁、游标、批次、分诊、人读报告和异常恢复，再谈第二个适配器、L2 本地动作和多 bot 协作。
-6. **距离目标：阶段 1 已落地，后续仍未实现。** 已完成 Schema 校验器、批准与生命周期 CLI、单次进程运行时、`fake` 适配器和无模型测试；还缺真实适配器、常驻运行时、Agent 调用契约、部署与恢复、跨三端契约和真实基准。本文第 16 节给出阶段与进入条件。
+6. **距离目标：阶段 1 与阶段 2 第一步已落地，后续仍未实现。** 已完成 Schema 校验器、批准与生命周期 CLI、单次进程运行时、`fake` 适配器、只读 `feishu` 适配器和无模型测试；还缺常驻运行时、Agent 调用契约、分诊批次、部署与恢复、跨三端契约和真实基准。本文第 16 节给出阶段与进入条件。
 
 ## 1. 六个问题，先给答案
 
@@ -160,40 +160,40 @@ bot_runtime.py（锁、触发器、事件、批次、恢复、健康）
         └── 输出（面板、项目本地 JSONL/Markdown、未来外部目标）
 ```
 
-### 5.2 规划落位，当前均不创建
+### 5.2 落位：已创建与仍规划
+
+已创建：
 
 ```text
 scripts/
-├── bot.py                         # 控制面：定义校验、草稿、批准、生命周期
-├── bot_runtime.py                 # 运行时：锁、调度、批次、恢复；不含模型判断
+├── bot.py                         # validate/explain/approve/run --once/status/stop/resume
+├── bot_schema.py                  # 定义、策略、路径与摘要校验
+├── bot_runtime.py                 # 锁、配额、轮询、状态、健康、生命周期
 └── bot_adapters/
     ├── __init__.py
     ├── base.py                    # 适配器接口与错误分类
-    └── feishu_sync.py             # 第一个只读适配器
+    ├── fake.py                    # 无网络测试适配器
+    └── feishu_sync.py             # 只读飞书适配器
 
 skills/project-collaboration/
-├── scripts/
-│   ├── bot.sh                     # 跨三端薄包装器
-│   └── feishu-sync.sh             # 场景薄包装器（可选）
-└── references/
-    ├── bot-framework.md           # 面向用户和协调者的操作说明
-    └── feishu-sync.md             # 飞书场景说明
+├── scripts/bot.sh                 # 跨三端薄包装器
+└── references/bot-framework.md    # 面向用户和协调者的操作说明
 
 templates/
 ├── bot-definition.json            # 全部使用占位符
-├── bot-policy.json                # 项目策略模板
-└── bots/
-    ├── feishu-comment-triage.json # 场景模板
-    ├── ci-watch.json
-    └── repo-health.json
+└── bot-policy.json                # 项目策略模板
 
 tests/
-├── test_bot_definition.py
+├── test_bot_schema.py
+├── test_bot_approval.py
 ├── test_bot_runtime.py
-├── test_bot_adapters.py
-├── test_feishu_sync.py
+├── test_bot_security.py
+├── test_bot_wrapper.py
+├── test_feishu_adapter.py
 └── fixtures/bot/                  # 合成事件、批准、错误与恢复场景
 ```
+
+仍规划、尚未创建：`feishu-sync.sh`、`references/feishu-sync.md`、场景模板 `templates/bots/*`、常驻运行时、Agent 调用契约和分诊批次。
 
 仍只有一个 `project-collaboration` Skill。需要扩展的是包装器、参考文档和无模型测试，不是为每个 bot 新增一份常驻流程正文。
 
@@ -1022,29 +1022,30 @@ MVP 只需要：
 
 不做：代码、真实 bot、外部调用。
 
-#### 阶段 1：控制面与假适配器
+#### 阶段 1：控制面与假适配器（已实施）
 
-交付：
+实际交付：
 
-- `bot.py` 的 `draft/validate/explain/approve/start/status/pause/stop/retire`；
+- `bot.py` 的 `validate/explain/approve/run --once/status/stop/resume`；`draft/start/pause/retire` 尚未实现；
 - Schema 校验、路径越界、策略交集、批准摘要、lifecycle；
-- `bot_runtime.py` 的单次 `once`、锁、健康、假适配器；
+- `bot_runtime.py` 的单次 `once`、锁、配额、健康、`fake` 适配器；
 - 无模型测试：默认拒绝、批准失效、重复事件、锁冲突、路径逃逸、配置错误。
 
-退出条件：一个合成 bot 可以在临时项目里 draft → validate → approve → once → stop；没有任何网络和模型调用；测试可重复。
+退出条件已满足：合成 bot 可以在临时项目里 validate → approve → once → stop/resume；没有网络和模型调用；测试可重复。
 
 不做：真实飞书、Herdr、常驻循环。
 
-#### 阶段 2：飞书只读实例
+#### 阶段 2：飞书只读实例（第一步已实施）
 
-交付：
+已交付：
 
-- `bot_adapters/feishu_sync.py`：配置校验、分页、评论去重、逐项游标、错误分类；
-- 事件、批次、分诊调用、人读报告；
-- 合成 fixtures 覆盖认证失效、部分失败、重复评论、分页边界；
-- 一个真实项目的手动 `once` 验收（用户提供测试账号/项目）。
+- `bot_adapters/feishu_sync.py`：配置与环境变量解析、只读命令封装、分页、评论去重、逐项游标、错误分类；
+- 合成 fixtures 覆盖认证失效、token 过期、重复评论、分页边界、配置缺失、环境变量覆盖和二次零新增；
+- 单次 `once` 的真实只读拉取验收（真实数据只落在临时项目，不进公共仓）。
 
-退出条件：连续多轮 `once` 不重复、不漏项；认证失效不推进游标；报告与机器结论同源；不写飞书。
+尚未交付：常驻/定时触发、批次、分诊 Agent 调用、人读报告、真实项目长期连续验收。
+
+退出条件（完整阶段 2）：连续多轮 `once` 不重复、不漏项；认证失效不推进游标；报告与机器结论同源；不写飞书。
 
 不做：外部写、自动回复、L2。
 

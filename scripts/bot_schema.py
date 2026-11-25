@@ -14,7 +14,7 @@ BOT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 SCHEMA_VERSION = 1
 AUTONOMY_LEVELS = {"L0": 0, "L1": 1, "L2": 2, "L3": 3, "L4": 4}
 RUNTIME_KINDS = {"process", "agent_batch"}
-ADAPTER_NAMES = {"fake"}
+ADAPTER_NAMES = {"fake", "feishu"}
 OUTPUT_TYPES = {"herdr_panel", "local_file"}
 AGENT_KINDS = {"claude", "pi", "codex"}
 CONCURRENCY_MODES = {"forbid", "queue", "replace"}
@@ -226,8 +226,8 @@ def _validate_adapter(
             result.errors.append(f"adapter.config_ref: file not found: {config_ref}")
         elif target is not None and target.is_file():
             adapter_config = _load_json(target, "adapter.config_ref", result)
-            if adapter_config is not None and "scenario" not in adapter_config:
-                result.errors.append("adapter.config_ref: scenario is required")
+            if adapter_config is not None and name == "fake" and "scenario" not in adapter_config:
+                result.errors.append("adapter.config_ref: scenario is required for the fake adapter")
 
 
 def _validate_runtime(value: Any, result: ValidationResult) -> None:

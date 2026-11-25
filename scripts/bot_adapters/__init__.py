@@ -1,9 +1,10 @@
-"""Stage-one bot adapters."""
+"""Deterministic bot adapters."""
 
 from .base import AdapterError, PollResult
 from .fake import FakeAdapter
+from .feishu_sync import FeishuAdapter
 
-ADAPTERS = {"fake": FakeAdapter}
+ADAPTERS = {"fake": FakeAdapter, "feishu": FeishuAdapter}
 
 
 def get_adapter(name: str):
@@ -17,4 +18,4 @@ def get_adapter(name: str):
         ) from exc
 
 
-__all__ = ["AdapterError", "PollResult", "FakeAdapter", "get_adapter"]
+__all__ = ["AdapterError", "PollResult", "FakeAdapter", "FeishuAdapter", "get_adapter"]

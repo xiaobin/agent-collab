@@ -1,6 +1,6 @@
-# Bot 框架（阶段 1）
+# Bot 框架（阶段 1–2 第一步）
 
-只在项目明确要建立自动化 bot，且用户已给出 `goal_ref` 时使用。阶段 1 只实现定义、批准、单次运行和本地状态，不连接真实飞书、不调用模型、不启动常驻循环。
+只在项目明确要建立自动化 bot，且用户已给出 `goal_ref` 时使用。当前实现定义、批准、单次运行、本地状态，以及真实飞书适配器的只读单次拉取；不启动常驻循环，不调用模型，不做分诊批次。
 
 完整设计见 [通用 Bot 框架](../../../docs/bot-framework-design.md)；飞书场景见 [飞书同步设计](../../../docs/feishu-sync-design.md)。
 
@@ -8,7 +8,8 @@
 
 - Bot 定义和项目策略都在使用方项目内，公共包只提供 Schema、CLI、占位模板和测试。
 - 真实 `project_key`、`user_key`、凭据、游标、事件和报告不得写入公共包。
-- 阶段 1 的 `run` 只接受 `--once`；`agent_batch` 和常驻模式会明确拒绝。
+- 当前 `run` 只接受 `--once`；`agent_batch` 和常驻模式会明确拒绝。
+- `feishu` 适配器只调用 `auth status`、`user me`、`mywork todo`、`comment list`、`workitem get` 等只读命令；不登录、不重试、不发送任何写请求。
 - 创建 Bot 不是 Agent 的自治权限：Agent 起草，用户批准，运行时启动。
 - 阶段 1 只验证逻辑边界，不提供 OS 级隔离。
 
@@ -57,9 +58,11 @@ sh "<skill_dir>/scripts/bot.sh" resume   --bot-id <bot-id>
 | 5 | 运行时或适配器一般失败 |
 | 6 | 适配器认证失效 |
 
-## 5. 阶段 1 的假适配器
+## 5. 适配器
 
-`adapter.name` 只能是 `fake`。`adapter-config.json` 只用于本地测试：
+### fake
+
+`adapter.name` 为 `fake` 时，`adapter-config.json` 只用于本地测试：
 
 ```json
 {
@@ -68,4 +71,24 @@ sh "<skill_dir>/scripts/bot.sh" resume   --bot-id <bot-id>
 }
 ```
 
-支持 `ok`、`auth_expired`、`partial_failure`。它不访问网络、不读凭据、不调用模型；`fixture_path` 必须位于工作区或显式 `read_scope` 内，事件必须有非空且不超过 256 字符的 `event_id`。真实适配器接入前，必须补上认证过期、部分失败和游标不变的行为验证。
+支持 `ok`、`auth_expired`、`partial_failure`。它不访问网络、不读凭据、不调用模型；`fixture_path` 必须位于工作区或显式 `read_scope` 内，事件必须有非空且不超过 256 字符的 `event_id`。
+
+### feishu
+
+`adapter.name` 为 `feishu` 时，项目策略必须允许 `feishu`，定义中 `permissions.network_read` 必须为 `true`、`network_write` 必须为 `false`。推荐把身份项留给项目本地配置或环境变量，不要写进公共模板：
+
+```json
+{
+  "project_key": "${PROJECT_KEY}",
+  "work_item_id": "${WORK_ITEM_ID}",
+  "expected_user_key": "${USER_KEY}",
+  "fetch_details": true,
+  "max_pages": 20,
+  "comment_max_pages": 20,
+  "timeout_seconds": 30
+}
+```
+
+对应环境变量为 `MEEGLE_PROJECT_KEY`、`MEEGLE_WORK_ITEM_ID`、`MEEGLE_USER_KEY`、`MEEGLE_FETCH_DETAILS`、`MEEGLE_MAX_PAGES`、`MEEGLE_COMMENT_MAX_PAGES`、`MEEGLE_TIMEOUT_SECONDS`、`MEEGLE_BIN`。身份项没有内置默认值；`work_item_id` 缺少 `project_key` 直接退出 2。认证状态由用户自己的 `meegle` 登录提供；未认证或 token 过期退出 6，不自动登录、不重试。
+
+当前 `feishu` 适配器只做单次只读拉取：枚举待办（或用 `work_item_id` 指定单项）、逐项读取详情和评论，产出 `work_item.discovered`/`work_item.updated`/`comment.created` 事件。评论按 `(created_at, comment_id)` 排序并以 `comment_id` 去重；分页超过 `max_pages`/`comment_max_pages` 视为不完整，退出 5 且不推进游标。

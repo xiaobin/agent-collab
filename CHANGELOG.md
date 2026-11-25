@@ -2,6 +2,22 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.3] - 2026-11-25
+
+### Added
+
+- `feishu` 只读适配器：通过 `meegle` 的 `auth status`、`user me`、`mywork todo`、`comment list`、`workitem get` 枚举待办、读取工作项详情与评论，产出 `work_item.discovered`、`work_item.updated`、`comment.created` 事件。
+- 身份项走配置：`project_key`、`work_item_id`、`expected_user_key` 可由项目配置或 `MEEGLE_*` 环境变量提供，代码中没有真实项目或人员 ID 默认值。
+- 评论按 `(created_at, comment_id)` 排序、按 `comment_id` 去重；分页超过上限视为不完整，退出 5 且不推进游标。
+- 工作项快照递归规范化数组顺序，避免真实 API 返回顺序变化造成假更新；游标记录每项快照摘要和已见评论 ID。
+- 认证失效或 token 过期退出 6，不自动登录、不重试；真实运行只接受 `--once`，不调用模型。
+- 合成 meegle CLI 测试覆盖首轮事件、二次零新增、分页终止、分页超限、认证失效、token 过期、配置覆盖、重复待办行和数组顺序不稳定。
+
+### Compatibility
+
+- 现有 Bot 定义、批准快照、状态和退出码保持不变；`feishu` 需要项目策略允许该适配器，且定义中 `network_read=true`、`network_write=false`。
+- 未实现常驻循环、Herdr 定时、Agent 调用和分诊批次；公共包仍不包含真实 ID、凭据、游标或事件。
+
 ## [0.4.2] - 2026-11-25
 
 ### Added
