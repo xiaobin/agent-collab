@@ -2,6 +2,25 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.2] - 2026-11-25
+
+### Added
+
+- 通用 Bot 框架阶段 1：`bot.py` 提供 `validate`、`explain`、`approve`、`run --once`、`status`、`stop`、`resume`；定义与项目策略校验覆盖目标、适配器、运行时、工作区、权限、触发器、输出、记忆、健康和升级路径。
+- 批准快照写入 `.herdr/bots/approved/<bot-id>/<revision>.json`，包含定义、项目策略、适配器配置三份 SHA-256，并绑定项目根、运行用户、批准人、时间、权限范围和可选过期时间；同 revision 采用原子 no-replace 写入，跨项目或跨用户重放会拒绝。
+- 单次进程运行时：非阻塞文件锁、游标、事件去重、`state.json`、`health.json`、`events.jsonl` 和 append-only `lifecycle.jsonl`；`stop`/`resume` 与运行共用锁，stopped/paused 不会隐式恢复。
+- 固定状态与批准写入使用 dirfd、`O_NOFOLLOW` 和原子提交，拒绝 symlink 越界；私有状态文件为 `0600`，新建目录为 `0700`。
+- `max_bots`、`max_active_bots` 和 interval 最小间隔在批准/运行路径执行；非法 `max_autonomy` 与非法策略列表 fail closed。
+- `fake` 本地适配器，支持 `ok`、`auth_expired`、`partial_failure`，不访问网络、不读凭据、不调用模型。
+- `skills/project-collaboration/scripts/bot.sh` 三端包装器、`references/bot-framework.md`、`templates/bot-definition.json` 与 `templates/bot-policy.json`。
+- 阶段 1 无模型测试：Schema、批准、运行时、锁、认证失败、部分失败、摘要篡改、symlink 越界、stop/resume、策略门禁、跨项目重放、并发批准、非法事件、写失败、read_scope、退出码与包装器。
+
+### Compatibility
+
+- 现有任务卡、评估记录、ledger 和项目 `.herdr/` 状态格式不变。
+- Bot 状态只写入项目 `.herdr/bots/`；公共包不包含真实项目 ID、人员 ID、凭据、游标或报告。
+- 常驻运行时、真实适配器、Agent 调用和网络访问未实现；`run` 不接受常驻模式，`agent_batch` 会明确拒绝。
+
 ## [0.4.1] - 2026-11-24
 
 ### Changed

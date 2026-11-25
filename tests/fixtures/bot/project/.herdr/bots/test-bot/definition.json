@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "bot_id": "test-bot",
+  "revision": 1,
+  "goal_ref": "TEST-GOAL-1",
+  "display_name": "Fake smoke bot",
+  "description": "Synthetic bot used by stage-one tests; it never calls a model or the network.",
+  "identity": {
+    "instructions_ref": null,
+    "owner_ref": "local-user",
+    "tags": ["test"]
+  },
+  "adapter": {
+    "name": "fake",
+    "version": "1",
+    "config_ref": ".herdr/bots/test-bot/adapter-config.json"
+  },
+  "runtime": {
+    "kind": "process",
+    "agent": null,
+    "concurrency": "forbid",
+    "lock_ttl_seconds": 90,
+    "heartbeat_seconds": 5
+  },
+  "workspace": {
+    "root": ".herdr/bots/test-bot",
+    "read_scope": [],
+    "write_scope": [".herdr/bots/test-bot"]
+  },
+  "permissions": {
+    "autonomy_ceiling": "L1",
+    "project_write_scope": [],
+    "network_read": false,
+    "network_write": false,
+    "external_actions": "deny",
+    "bot_administration": "deny",
+    "commands": [],
+    "secret_refs": []
+  },
+  "triggers": [
+    {
+      "type": "manual",
+      "skip_if_running": true
+    }
+  ],
+  "triage": {
+    "mode": "suggest_only",
+    "batch_interval_seconds": 1800,
+    "max_batch_events": 20,
+    "max_context_events": 40
+  },
+  "outputs": [
+    {
+      "type": "herdr_panel",
+      "format": "summary"
+    },
+    {
+      "type": "local_file",
+      "path": ".herdr/bots/test-bot/reports",
+      "format": "markdown_and_jsonl"
+    }
+  ],
+  "memory": {
+    "mode": "private",
+    "path": ".herdr/bots/test-bot/memory",
+    "retention_days": 30,
+    "max_bytes": 1048576
+  },
+  "health": {
+    "stale_after_seconds": 1800,
+    "max_consecutive_failures": 3
+  },
+  "escalation": {
+    "needs_user_route": "herdr_panel",
+    "quiet_hours": null,
+    "max_items_per_group": 5
+  }
+}

@@ -4,3 +4,5 @@ __pycache__/
 .coverage
 .omc/
 .herdr/
+!tests/fixtures/**/.herdr/
+!tests/fixtures/**/.herdr/**

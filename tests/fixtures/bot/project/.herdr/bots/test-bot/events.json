@@ -1,0 +1,17 @@
+{
+  "next_cursor": {"index": 2},
+  "events": [
+    {
+      "event_id": "evt-1",
+      "kind": "comment",
+      "source": "fake",
+      "payload": {"text": "hello"}
+    },
+    {
+      "event_id": "evt-2",
+      "kind": "comment",
+      "source": "fake",
+      "payload": {"text": "world"}
+    }
+  ]
+}

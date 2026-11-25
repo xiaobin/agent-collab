@@ -1,0 +1,17 @@
+{
+  "next_cursor": {"index": 3},
+  "events": [
+    {
+      "event_id": "evt-dup",
+      "kind": "comment",
+      "source": "fake",
+      "payload": {"text": "same event twice"}
+    },
+    {
+      "event_id": "evt-dup",
+      "kind": "comment",
+      "source": "fake",
+      "payload": {"text": "same event twice"}
+    }
+  ]
+}
