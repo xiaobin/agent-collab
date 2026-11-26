@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "allowed_adapters": ["feishu"],
+  "allowed_runtimes": ["process"],
+  "allowed_agent_kinds": ["claude", "pi", "codex"],
+  "allowed_outputs": ["herdr_panel", "local_file"],
+  "max_bots": 3,
+  "max_active_bots": 1,
+  "min_interval_seconds": 60,
+  "max_autonomy": "L1",
+  "require_approval_for_start": true,
+  "allow_network_read": true,
+  "allow_network_write": false,
+  "data_classification": "internal",
+  "state_retention_default_days": 30
+}

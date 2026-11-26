@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "bot_id": "feishu-sync",
+  "revision": 1,
+  "goal_ref": "REPLACE-WITH-GOAL-REF",
+  "display_name": "Feishu work-item sync (read-only)",
+  "description": "Pull the owner's Feishu work-item todos, details and comments into local .herdr state once per day. No writes to Feishu, no dispatch to other agents.",
+  "identity": {
+    "instructions_ref": null,
+    "owner_ref": "REPLACE-WITH-OWNER-REF",
+    "tags": ["feishu", "read-only", "triage"]
+  },
+  "adapter": {
+    "name": "feishu",
+    "version": "1",
+    "config_ref": ".herdr/bots/feishu-sync/adapter-config.json"
+  },
+  "runtime": {
+    "kind": "process",
+    "agent": null,
+    "concurrency": "forbid",
+    "lock_ttl_seconds": 90,
+    "heartbeat_seconds": 5
+  },
+  "workspace": {
+    "root": ".herdr/bots/feishu-sync",
+    "read_scope": [],
+    "write_scope": [".herdr/bots/feishu-sync"]
+  },
+  "permissions": {
+    "autonomy_ceiling": "L1",
+    "project_write_scope": [],
+    "network_read": true,
+    "network_write": false,
+    "external_actions": "deny",
+    "bot_administration": "deny",
+    "commands": [],
+    "secret_refs": []
+  },
+  "triggers": [
+    {
+      "type": "manual",
+      "skip_if_running": true
+    },
+    {
+      "type": "interval",
+      "interval_seconds": 86400,
+      "skip_if_running": true
+    }
+  ],
+  "triage": {
+    "mode": "suggest_only",
+    "triage_trigger": "herdr_batch",
+    "batch_interval_seconds": 86400,
+    "max_batch_events": 50,
+    "max_context_events": 40,
+    "human_report_max_items_per_group": 5,
+    "human_report_max_lines": 40,
+    "dispatch": {
+      "mode": "herdr",
+      "workspace_label": "REPLACE-WITH-WORKSPACE-LABEL",
+      "cwd_marker": "REPLACE-WITH-PROJECT-ROOT",
+      "exclude_panes": [],
+      "allow_pane_labels": []
+    }
+  },
+  "outputs": [
+    {
+      "type": "herdr_panel",
+      "format": "summary"
+    },
+    {
+      "type": "local_file",
+      "path": ".herdr/bots/feishu-sync/reports",
+      "format": "markdown_and_jsonl"
+    }
+  ],
+  "memory": {
+    "mode": "private",
+    "path": ".herdr/bots/feishu-sync/memory",
+    "retention_days": 30,
+    "max_bytes": 1048576
+  },
+  "health": {
+    "stale_after_seconds": 1800,
+    "max_consecutive_failures": 3
+  },
+  "escalation": {
+    "needs_user_route": "herdr_panel",
+    "quiet_hours": null,
+    "max_items_per_group": 5
+  }
+}
