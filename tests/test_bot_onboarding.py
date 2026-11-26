@@ -119,6 +119,17 @@ class OnboardingScriptTest(unittest.TestCase):
         self.assertEqual(chosen.returncode, 0, chosen.stderr)
         self.assertEqual(json.loads(chosen.stdout)["project_key"], "beta")
 
+    def test_empty_todo_list_asks_for_project_key(self):
+        self.register_owner()
+        env = dict(self.env, STUB_PROJECTS="")
+        result = self.plan(env=env)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no project space found", result.stderr)
+        self.assertIn("--project-key", result.stderr)
+        self.assertNotIn("ambiguous", result.stderr)
+        chosen = self.plan("--project-key", "6ab48e40e56d9a132bd6e4cf", env=env)
+        self.assertEqual(chosen.returncode, 0, chosen.stderr)
+
     def test_write_is_idempotent_and_refuses_drift(self):
         self.register_owner()
         plan_path = self.project / ".herdr" / "plan.json"

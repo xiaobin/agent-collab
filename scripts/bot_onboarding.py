@@ -99,9 +99,14 @@ def _select_project_key(probes: dict[str, Any], requested: str | None) -> str:
         return requested
     if len(candidates) == 1:
         return candidates[0]
+    if not candidates:
+        raise OnboardingError(
+            "no project space found in the owner's todo items; ask the user for their project_key "
+            "and pass --project-key explicitly",
+            2,
+        )
     raise OnboardingError(
-        "feishu project space is ambiguous; ask the user to choose one of: "
-        + (", ".join(candidates) if candidates else "<no todo items returned, pass --project-key explicitly>"),
+        "feishu project space is ambiguous; ask the user to choose one of: " + ", ".join(candidates),
         2,
     )
 
