@@ -382,7 +382,22 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     if code != EXIT_OK:
         print(f"ERROR: {payload.get('message', payload.get('error'))}", file=sys.stderr)
+        return code
+    if args.once and definition.get("adapter", {}).get("name") == "feishu":
+        _print_collection_summary(project_root, args.bot_id)
     return code
+
+
+def _print_collection_summary(project_root: Path, bot_id: str) -> None:
+    """After a successful pass, print the local read-only summary (never calls meegle)."""
+    try:
+        from bot_report import render, summarize
+
+        summary = summarize(project_root, bot_id)
+        print(file=sys.stderr)
+        print(render(summary), file=sys.stderr)
+    except Exception as exc:  # a summary must never turn a successful run into a failure
+        print(f"WARNING: cannot render collection summary: {exc}", file=sys.stderr)
 
 
 def _resident_view(resident: dict[str, Any]) -> dict[str, Any]:

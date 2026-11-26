@@ -17,7 +17,7 @@ class PiPackageTest(unittest.TestCase):
         self.assertIn("pi-package", package["keywords"])
         self.assertEqual(
             package["pi"]["skills"],
-            ["./skills/project-collaboration", "./skills/bot-onboarding"],
+            ["./skills/project-collaboration", "./skills/bot-onboarding", "./skills/bot-report"],
         )
         for relative in package["pi"]["skills"]:
             skill_dir = ROOT / relative

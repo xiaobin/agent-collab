@@ -37,7 +37,7 @@ description: 把飞书待办与评论等只读数据接入项目本地 Bot：探
 5. **写入与校验**：`bot_onboarding.py write`（幂等；内容相同不改动；仅允许同一 bot 的更高 revision 覆盖 definition；计划被篡改则拒绝）→ `bot.py validate` → `bot.py explain`。
 6. **批准（必须停）**：向用户展示数据来源、空间、当前身份、频率（分钟）、运行方式、写范围、落盘路径与三个哈希，等一句确认；确认后执行 `approve`，`--approver-ref` 用登记的 `owner_ref`，`--source-ref` 指向该确认消息。**没有用户确认消息不得批准**，agent 不得自称批准人，不得编造 `source_ref`。改了频率或运行方式 → 新 revision → 必须重新走本步，**禁止复用旧批准**。
 7. **运行（按用户选的模式）**：
-   - **单次**：执行 plan 输出里的 `run.command`（`run --once`），取 `status` 与 triage 报告路径，并明确告诉用户「本次拉完就退出，下次需要你再次触发」。
+   - **单次**：执行 plan 输出里的 `run.command`（`run --once`）。成功后命令会直接打印本次采集摘要（空间、待办数、评论数、待办列表与节点负责人），把它原样转述给用户，不要只回「完成」；同时取 `status` 与 triage 报告路径，并明确告诉用户「本次拉完就退出，下次需要你再次触发」；之后随时可用 `bot-report` Skill 再看。
    - **常驻**：启动前**再问一次**「现在就让它在后台常驻吗？」（第二次确认，它是长期进程）；确认后用 `run.command`（含 `--resident --interval-seconds`）后台启动，把 PID 写入 `run.pid_file`，stdout/stderr 追加到 `run.log_file`，并把 `run.stop_command`（`bot.py stop`）和 `run.status_command`（`bot.py status`）原样告诉用户。未拿到第二次确认不得启动。
 8. **交付报告**：数据来源、空间、身份、频率、运行方式、落盘位置、本次结果、如何停止/查状态（常驻）、如何再次触发（单次）、配置或频率变更需重新批准，以及未验证项。
 

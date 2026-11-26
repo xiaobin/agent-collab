@@ -54,6 +54,18 @@ agent 会在你的项目里完成探测、生成配置、校验和首次只读�
 - 状态：直接问 agent，或让它把 `state`（第一次是 `uninitialized`，正常跑过是 `ok`，被停或认证失效是 `paused`）、`last_success_at`、`last_error` 念给你。
 - 常驻进程：agent 会记录 PID（`.herdr/bots/feishu-sync/state/resident.pid`）和日志（`.herdr/bots/feishu-sync/logs/resident.log`），并告诉你怎么停（`bot.py stop`）、怎么查（`bot.py status`）。
 
+**接入后随时查看**
+
+对 agent 说一句「看看飞书待办」，或直接调用：
+
+- Claude Code：`/agent-collab:bot-report`
+- Pi：`/skill:bot-report`
+- Codex：`$agent-collab:bot-report`
+
+它会用本地已采集的数据给你一份摘要：空间、未完成待办数、评论数，以及待办列表（工作项 ID、标题、当前节点、节点负责人，评论数按工作项归并）。默认最多列 10 条，其余会指向报告文件 `.herdr/bots/feishu-sync/reports/summary-<时间戳>.md`。
+
+想看最新的，就说「先同步一次再看」；只有你明确要求时它才会先跑一次采集，而且同样要过批准门禁——没批准时它会停下来说明原因，不会自动重批。
+
 **边界**：只读飞书、只写项目本地 `.herdr/`、失败原样报出；`--resident` 单实例锁基于本地文件系统，NFS 挂载未验证；token 失效需人工重新登录；配置一改，旧批准立即失效，必须重新确认。
 
 <details>
@@ -64,6 +76,7 @@ agent 会在你的项目里完成探测、生成配置、校验和首次只读�
 模块：
 
 - `scripts/bot_onboarding.py`：`plan` 只读探测 meegle 与 `.herdr/bot-owner.json`，渲染三个配置文件并给出 SHA-256；`write` 按计划原样落盘，拒绝被篡改的计划和静默覆盖漂移配置。
+- `scripts/bot_report.py`：只读汇总本地已采集的 `state/events.jsonl`、`state/state.json` 与 `state/user-cache.json`，渲染待办摘要并写入 `reports/summary-<时间戳>.md`；`--sync` 才先跑一次 `run --once`，未批准退出码 3。
 - `scripts/bot.py`：统一 CLI，子命令 `validate` / `explain` / `approve` / `run`（`--once` 或 `--resident`）/ `status` / `stop` / `resume` / `triage`（`prepare` / `claim` / `apply` / `dispose` / `report` / `dispatch`）。
 - `scripts/bot_schema.py`：定义与项目策略校验、适配器配置解析、身份绑定与定义摘要计算。适配器配置优先级为 `MEEGLE_*` 环境变量 > 定义中 `adapter.config_ref` 指向的适配器配置文件 > 内置默认（仅非身份项）。飞书适配器要求 `project_key`、`expected_user_key` 必填且无默认值，绝不兜底；配置错误在首次远程调用前非零退出。批准快照记录定义、项目策略和适配器配置的 SHA-256，任一漂移都要求重新批准，运行中进入 `approval_invalidated` 后必须重新批准；`stop` 之后必须显式 `resume`。
 - `scripts/bot_runtime.py`：状态机、游标、幂等事件、单实例锁、心跳租约、指数退避、优雅停止、失败预算与运行统计。
