@@ -256,14 +256,37 @@ class FeishuAdapterTests(unittest.TestCase):
             self.poll(config=config)
         self.assertEqual(ctx.exception.code, "incomplete_pagination")
 
-    def test_unauthenticated_fails_with_exit_six_and_no_data_calls(self) -> None:
+    def test_unclassified_auth_false_is_unknown_not_auth_expired(self) -> None:
         payload = base_fixture()
-        payload["auth"] = {"authenticated": False}
+        payload["auth"] = {"authenticated": False, "reason": "cosmic ray"}
         self.write_fixture(payload)
         with self.assertRaises(AdapterError) as ctx:
             self.poll()
-        self.assertEqual(ctx.exception.exit_code, 6)
+        self.assertEqual(ctx.exception.code, "unknown_auth_state")
+        self.assertEqual(ctx.exception.exit_code, 5)
         self.assertEqual(self.calls(), [["auth", "status", "--format", "json"]])
+
+    def test_network_failure_is_upstream_error_not_auth_expired(self) -> None:
+        payload = base_fixture()
+        payload["auth"] = {
+            "authenticated": False,
+            "reason": "server unreachable: request timed out, please check your network connection and retry",
+        }
+        self.write_fixture(payload)
+        with self.assertRaises(AdapterError) as ctx:
+            self.poll()
+        self.assertEqual(ctx.exception.code, "upstream_error")
+        self.assertEqual(ctx.exception.exit_code, 5)
+        self.assertEqual(self.calls(), [["auth", "status", "--format", "json"]])
+
+    def test_real_auth_failure_from_status_is_exit_six(self) -> None:
+        payload = base_fixture()
+        payload["auth"] = {"authenticated": False, "reason": "401 token expired"}
+        self.write_fixture(payload)
+        with self.assertRaises(AdapterError) as ctx:
+            self.poll()
+        self.assertEqual(ctx.exception.code, "authentication_expired")
+        self.assertEqual(ctx.exception.exit_code, 6)
 
     def test_expired_token_from_command_is_classified(self) -> None:
         payload = base_fixture()

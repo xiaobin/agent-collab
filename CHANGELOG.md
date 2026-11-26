@@ -2,6 +2,19 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.8] - 2026-11-26
+
+### Fixed
+
+- `meegle auth status` 返回 `authenticated:false` 时不再一律判定为认证过期：只有 reason 含 401/token expired/unauthorized/not logged in/authentication expired 才退出 6；server unreachable/timed out/network/connection 等按 `upstream_error` 退出 5 并退避；无法归类按 `unknown_auth_state` 退出 5 并退避。
+- 网络抖动不再写 `auth_required`、不再停止常驻循环、不再提示人工重新登录；连续上游错误按 1–30 秒退避持续重试，直到用户停止。
+- 新增断网、真实 401、未知 reason 三条适配器回归，以及常驻连续 upstream_error 直到 SIGTERM 的回归。
+
+### Compatibility
+
+- 真实认证失效仍退出 6；命令本身返回 401/token expired 时行为不变。
+- 仅只读采集与分诊链路，不改变配置字段或数据格式；仍需重新批准仅在定义/策略/适配器配置变化时发生。
+
 ## [0.4.7] - 2026-11-26
 
 ### Changed

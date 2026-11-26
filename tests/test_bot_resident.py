@@ -303,6 +303,37 @@ class ResidentCliTest(unittest.TestCase):
         self.assertEqual(payload["resident"]["state"], "stale")
         self.assertEqual(payload["resident"]["stale_reason"], "lease_expired")
 
+    def test_repeated_upstream_errors_keep_retrying_until_signal(self):
+        self.config_path.write_text(json.dumps({"scenario": "upstream_error", "fixture_path": ".herdr/bots/test-bot/events.json"}))
+        self.assertEqual(self.approve().returncode, 0)
+        self.start_resident(interval="0.01")
+        log_path = self.bot_dir / "state" / "run.log"
+        deadline = time.monotonic() + 10
+        starts = 0
+        while time.monotonic() < deadline:
+            if log_path.exists():
+                starts = sum(
+                    1
+                    for line in log_path.read_text().splitlines()
+                    if line.strip() and json.loads(line).get("event") == "round_start"
+                )
+                if starts >= 3:
+                    break
+            time.sleep(0.05)
+        self.assertGreaterEqual(starts, 3)
+        self.assertIsNone(self.process.poll())
+        self.process.send_signal(signal.SIGTERM)
+        self.process.communicate(timeout=15)
+        self.assertEqual(self.process.returncode, 0)
+        self.assertEqual(self.state()["state"], "stopped")
+        log = self.run_log()
+        self.assertFalse(any(row["event"] == "auth_stop" for row in log))
+        self.assertTrue(any(row["event"] == "backoff" for row in log))
+        self.assertEqual(
+            [row.get("error") for row in log if row["event"] == "round_end"][:3],
+            ["upstream_error", "upstream_error", "upstream_error"],
+        )
+
     def test_run_log_does_not_contain_event_content(self):
         fixture = self.bot_dir / "events.json"
         payload = json.loads(fixture.read_text())

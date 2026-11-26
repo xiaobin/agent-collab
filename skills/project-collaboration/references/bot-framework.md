@@ -86,7 +86,7 @@ sh "<skill_dir>/scripts/bot.sh" triage report  --bot-id <bot-id> [--batch-id <ba
 }
 ```
 
-支持 `ok`、`auth_expired`、`partial_failure`。它不访问网络、不读凭据、不调用模型；`fixture_path` 必须位于工作区或显式 `read_scope` 内，事件必须有非空且不超过 256 字符的 `event_id`。
+支持 `ok`、`auth_expired`、`partial_failure`、`upstream_error`。它不访问网络、不读凭据、不调用模型；`fixture_path` 必须位于工作区或显式 `read_scope` 内，事件必须有非空且不超过 256 字符的 `event_id`。
 
 ### feishu
 
@@ -108,7 +108,7 @@ sh "<skill_dir>/scripts/bot.sh" triage report  --bot-id <bot-id> [--batch-id <ba
 }
 ```
 
-对应环境变量为 `MEEGLE_PROJECT_KEY`、`MEEGLE_WORK_ITEM_ID`、`MEEGLE_USER_KEY`、`MEEGLE_FETCH_DETAILS`、`MEEGLE_RESOLVE_USER_NAMES`、`MEEGLE_USER_CACHE_PATH`、`MEEGLE_MAX_PAGES`、`MEEGLE_COMMENT_MAX_PAGES`、`MEEGLE_TIMEOUT_SECONDS`、`MEEGLE_BIN`。身份项没有内置默认值；`work_item_id` 缺少 `project_key` 直接退出 2。`approve` 要求 `project_key` 和 `expected_user_key` 都存在，缺失退出 2；运行时认证用户必须与 `expected_user_key` 一致，不一致退出 6。认证状态由用户自己的 `meegle` 登录提供；未认证或 token 过期退出 6，不自动登录、不重试。
+对应环境变量为 `MEEGLE_PROJECT_KEY`、`MEEGLE_WORK_ITEM_ID`、`MEEGLE_USER_KEY`、`MEEGLE_FETCH_DETAILS`、`MEEGLE_RESOLVE_USER_NAMES`、`MEEGLE_USER_CACHE_PATH`、`MEEGLE_MAX_PAGES`、`MEEGLE_COMMENT_MAX_PAGES`、`MEEGLE_TIMEOUT_SECONDS`、`MEEGLE_BIN`。身份项没有内置默认值；`work_item_id` 缺少 `project_key` 直接退出 2。`approve` 要求 `project_key` 和 `expected_user_key` 都存在，缺失退出 2；运行时认证用户必须与 `expected_user_key` 一致，不一致退出 6。认证状态由用户自己的 `meegle` 登录提供。`authenticated:false` 不一律当认证失效：`reason` 含 401/token expired/unauthorized/not logged in/authentication expired 才退出 6；含 server unreachable/timed out/network/connection 等按 `upstream_error` 退出 5 并退避；无法归类的按 `unknown_auth_state` 退出 5 并退避，不写 `auth_required`，也不提示重新登录。
 
 `feishu` 适配器只做只读拉取：枚举待办（或用 `work_item_id` 指定单项）、逐项读取详情和评论，产出 `work_item.discovered`/`work_item.updated`/`comment.created` 事件；可单次运行，也可由 `run --resident` 按间隔重复。评论按 `(created_at, comment_id)` 排序并以 `comment_id` 去重；分页超过 `max_pages`/`comment_max_pages` 视为不完整，退出 5 且不推进游标。工作项前端链接只使用真实响应字段；当前 `mywork todo` 和 `workitem get` 都没有 URL 字段，因此不生成 `web_url`，也不猜链接。
 

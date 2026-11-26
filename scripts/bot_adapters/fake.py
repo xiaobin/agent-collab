@@ -24,6 +24,8 @@ class FakeAdapter(Adapter):
             raise AdapterError("authentication_expired", "fake adapter: authentication expired; re-authenticate before retrying", exit_code=6)
         if scenario == "partial_failure":
             raise AdapterError("partial_failure", "fake adapter: partial failure; cursor is not advanced", exit_code=5)
+        if scenario == "upstream_error":
+            raise AdapterError("upstream_error", "fake adapter: server unreachable", exit_code=5)
         if scenario != "ok":
             raise AdapterError("unsupported_scenario", f"fake adapter: unsupported scenario {scenario!r}", exit_code=5)
 

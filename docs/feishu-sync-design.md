@@ -99,7 +99,7 @@ CLI 同时保留单次 `once` 形态，便于接入验证和故障重放。`cron
 
 评论以 `comment_id` 为主要去重键，`created_at` 用于增量判断。第一版不依赖评论排序；每个工作项只有完整拉取成功后才推进自己的游标。任务快照、评论游标和报告均为项目本地运行数据。
 
-认证失效时必须明确报告“未登录”，不得将其解释为零任务或零评论，不得推进游标；恢复认证后从原状态继续。自动续期未验证前按人工重新登录设计。
+认证失效时必须明确报告“未登录”，不得将其解释为零任务或零评论，不得推进游标；恢复认证后从原状态继续。自动续期未验证前按人工重新登录设计。`meegle auth status` 在断网或上游超时时也会返回 `authenticated:false`，因此只有 reason 明确是 401/token expired/not logged in 等鉴权问题才停轮询；server unreachable/timeout/network 按上游错误退避，无法归类按 `unknown_auth_state` 退避，均不写 `auth_required`。
 
 ## 事件分诊与自治边界
 

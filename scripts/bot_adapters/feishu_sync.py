@@ -43,6 +43,20 @@ _DEFAULTS = {
     "user_cache_miss_ttl_seconds": 300,
 }
 _AUTH_MARKERS = ("401", "token expired", "unauthorized", "not logged in", "authentication expired")
+_NETWORK_MARKERS = (
+    "server unreachable",
+    "timed out",
+    "timeout",
+    "network",
+    "connection",
+    "connect",
+    "econnrefused",
+    "econnreset",
+    "enotfound",
+    "dns",
+    "socket",
+    "tls",
+)
 _MENTION_PATTERN = re.compile(r"@[^\s@]+")
 _USER_BATCH = 20
 
@@ -51,6 +65,15 @@ def _as_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _classify_auth_failure(reason: Any) -> str:
+    text = str(reason or "").lower()
+    if any(marker in text for marker in _AUTH_MARKERS):
+        return "authentication_expired"
+    if any(marker in text for marker in _NETWORK_MARKERS):
+        return "upstream_error"
+    return "unknown_auth_state"
 
 
 def _config(config: dict[str, Any]) -> dict[str, Any]:
@@ -116,10 +139,15 @@ class FeishuAdapter(Adapter):
             raise AdapterError("upstream_exec", f"feishu adapter: cannot execute meegle: {exc}", exit_code=5) from exc
         output = f"{completed.stdout}\n{completed.stderr}".lower()
         if completed.returncode != 0:
-            if any(marker in output for marker in _AUTH_MARKERS):
+            kind = _classify_auth_failure(output)
+            if kind == "authentication_expired":
                 raise AdapterError("authentication_expired", "feishu adapter: meegle is not authenticated or the token expired; re-authenticate manually", exit_code=6)
             detail = (completed.stderr or completed.stdout).strip()[:500]
-            raise AdapterError("upstream_error", f"feishu adapter: meegle {' '.join(args[:2])} failed: {detail}", exit_code=5)
+            raise AdapterError(
+                kind if kind == "unknown_auth_state" else "upstream_error",
+                f"feishu adapter: meegle {' '.join(args[:2])} failed: {detail}",
+                exit_code=5,
+            )
         try:
             payload = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
@@ -312,7 +340,15 @@ class FeishuAdapter(Adapter):
         cfg = _config(config)
         auth = self._run(cfg, ["auth", "status"])
         if auth.get("authenticated") is not True:
-            raise AdapterError("authentication_expired", "feishu adapter: meegle is not authenticated; re-authenticate manually", exit_code=6)
+            reason = auth.get("reason") or auth.get("error") or ""
+            kind = _classify_auth_failure(reason)
+            if kind == "authentication_expired":
+                raise AdapterError("authentication_expired", "feishu adapter: meegle is not authenticated; re-authenticate manually", exit_code=6)
+            raise AdapterError(
+                kind,
+                f"feishu adapter: meegle auth status is not usable: {reason or 'no reason given'}",
+                exit_code=5,
+            )
         expected_user = cfg.get("expected_user_key")
         if expected_user:
             user = self._run(cfg, ["user", "me"])
