@@ -1,6 +1,6 @@
-# Bot 框架（阶段 1–2 常驻采集）
+# Bot 框架（阶段 1–3 分诊与报告）
 
-只在项目明确要建立自动化 bot，且用户已给出 `goal_ref` 时使用。当前实现定义、批准、单次/常驻运行、本地状态，以及真实飞书适配器的只读拉取；不调用模型，不做分诊批次。
+只在项目明确要建立自动化 bot，且用户已给出 `goal_ref` 时使用。当前实现定义、批准、单次/常驻运行、本地状态、真实飞书适配器的只读拉取，以及确定性分诊批次校验和人读报告渲染；CLI 本身不调用模型，分诊结论由外部 Agent 提供。
 
 完整设计见 [通用 Bot 框架](../../../docs/bot-framework-design.md)；飞书场景见 [飞书同步设计](../../../docs/feishu-sync-design.md)。
 
@@ -20,6 +20,8 @@
 <project>/.herdr/bots/<bot-id>/definition.json
 <project>/.herdr/bots/<bot-id>/adapter-config.json
 <project>/.herdr/bots/<bot-id>/state/{state.json,health.json,resident.json,events.jsonl,run.log,lock,resident.lock}
+<project>/.herdr/bots/<bot-id>/state/triage/{batches,results.jsonl,dispositions.jsonl,ready.jsonl}
+<project>/.herdr/bots/<bot-id>/reports/triage/<batch-id>.{md,panel.txt}
 <project>/.herdr/bots/approved/<bot-id>/<revision>.json
 <project>/.herdr/bots/lifecycle.jsonl
 ```
@@ -40,7 +42,17 @@ sh "<skill_dir>/scripts/bot.sh" run      --bot-id <bot-id> --resident --interval
 sh "<skill_dir>/scripts/bot.sh" status   --bot-id <bot-id>
 sh "<skill_dir>/scripts/bot.sh" stop     --bot-id <bot-id> --reason <reason>
 sh "<skill_dir>/scripts/bot.sh" resume   --bot-id <bot-id>
+sh "<skill_dir>/scripts/bot.sh" triage prepare --bot-id <bot-id> [--force]
+sh "<skill_dir>/scripts/bot.sh" triage claim   --bot-id <bot-id> --batch-id <batch-id> --attempt-id <attempt-id>
+sh "<skill_dir>/scripts/bot.sh" triage apply   --bot-id <bot-id> --batch-id <batch-id> --file <results.json>
+sh "<skill_dir>/scripts/bot.sh" triage dispose --bot-id <bot-id> --triage-id <triage-id> \
+  --action <accepted|dismissed|deferred|noted|handed_off> --actor <actor-ref>
+sh "<skill_dir>/scripts/bot.sh" triage report  --bot-id <bot-id> [--batch-id <batch-id>]
 ```
+
+`triage prepare` 只从 `events.jsonl` 生成尚未入批的事件；认证失效退出 6、部分失败退出 5、health 缺失或损坏退出 5，均不建批。达到 `triage.max_batch_events`（含恰好达到）立即切批，未达到时等 `triage.batch_interval_seconds`；`--force` 只用于受控验证。`triage_trigger=manual` 时批次保持 `pending`，由人或协调者认领；`herdr_batch` 目前同样只生成待办，不自动假装已分诊。prepare/claim/apply/dispose 共用 `state/triage/lock`，并发操作返回 4；`ready.jsonl` 缺失时 prepare 会补发。
+
+`triage apply` 校验事件覆盖、四类分类、urgency、同 `event_id + triage_policy_version` 唯一、同批 `triage_id` 唯一，以及纠正必须 `supersedes` 当前有效结论；批次 `done` 后只接受 supersede 纠正。结果整批原子追加；中途失败后原输入可幂等续跑，已存在且内容一致的结论会跳过。`triage report` 从同一份 `results.jsonl` 生成完整 Markdown 和面板摘要，按需要你决定/可自行处理候选/待补上下文/仅知会分组，每组默认 5 项、总计 40 行；高优先级全局置顶，截断时保留分组计数与完整报告路径；无结果且批次未完成时显示 `TRIAGE_PENDING`，空事件静默。`dispositions.jsonl` 记录后续处置，不修改原事件或原结论。
 
 `validate` 在缺少 `.herdr/bot-policy.json` 时只做结构校验并警告；`approve` 和 `run` 必须有策略文件。批准快照同时记录定义、项目策略和适配器配置的 SHA-256；运行前任一文件变化都会要求重新批准。批准还绑定 `bot_id`、`revision`、项目根、运行用户、批准人、时间、权限范围，以及适配器声明的运行绑定；`feishu` 的绑定是 `project_key + user_key`，批准后若配置或环境变量改成另一组身份，运行退出 3。快照不可覆盖，跨项目复制无效。
 

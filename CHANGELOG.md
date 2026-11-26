@@ -2,6 +2,22 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.6] - 2026-11-26
+
+### Added
+
+- `bot.py triage prepare|claim|apply|dispose|report`：从 `events.jsonl` 生成确定性批次，空事件不建批；达到 `triage.max_batch_events` 立即切批，否则等待 `triage.batch_interval_seconds`。
+- 分诊结果契约：四类分类、独立 urgency、`triage_policy_version`、`supersedes` 纠正链、同 event+policy 唯一有效结论；`results.jsonl` 追加，`dispositions.jsonl` 记录后续处置。
+- 人读输出：从同一份 `results.jsonl` 生成全量 Markdown 和受限面板摘要，按需要你决定/可自行处理候选/待补上下文/仅知会分组，每组默认 5 项、总计 40 行；高优先级全局置顶，面板截断时保留各分组计数和完整报告路径；空事件静默，pending 显示 `TRIAGE_PENDING`，认证失效/部分失败不建批且与无新增长得不一样。
+- prepare/claim/apply/dispose 共用 `state/triage/lock` 单写锁；结果整批原子追加，失败后可按原输入幂等续跑；`ready.jsonl` 缺失时 prepare 自动补发；认证状态同时识别 `auth_required`、`authentication_expired`、`unauthorized`，health 缺失/损坏 fail-closed。
+- 新增 `tests/test_bot_triage.py`，覆盖空批次、恰好/超量切分、重复事件、同批重复 `triage_id`、supersede、真实认证状态、health 缺失/损坏、并发 claim/apply、部分 apply 恢复、ready 修复、分组高优置顶与行数上限、pending 和处置去重。
+
+### Compatibility
+
+- `triage_trigger=manual` 优先落地；`herdr_batch` 仍只生成 pending 批次，不自动假装已分诊。
+- 仍为只读、`suggest_only`，不执行飞书写操作、不调用模型、不改变常驻采集进程。
+- 新增配置字段均有默认值：`triage.triage_trigger`、`triage.human_report_max_items_per_group`、`triage.human_report_max_lines`；旧定义无需迁移。
+
 ## [0.4.5] - 2026-11-25
 
 ### Added

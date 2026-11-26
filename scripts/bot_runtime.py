@@ -210,6 +210,25 @@ def write_json(
         os.close(parent_fd)
 
 
+def write_text(project_root: Path, path: Path, text: str) -> None:
+    """Atomically write UTF-8 text through the same no-follow path checks."""
+    data = text.encode("utf-8")
+    parent_fd, name = _open_parent(project_root, path, create=True)
+    temporary: str | None = None
+    try:
+        _reject_symlink(parent_fd, name)
+        temporary = _write_temporary(parent_fd, name, data)
+        os.replace(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        temporary = None
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary, dir_fd=parent_fd)
+            except FileNotFoundError:
+                pass
+        os.close(parent_fd)
+
+
 def append_jsonl(project_root: Path, path: Path, payload: dict[str, Any]) -> None:
     data = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
     parent_fd, name = _open_parent(project_root, path, create=True)

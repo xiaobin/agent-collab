@@ -159,6 +159,22 @@ class BotSchemaCliTest(unittest.TestCase):
         self.assertIn("workspace", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_triage_trigger_must_be_manual_or_herdr(self):
+        definition = copy.deepcopy(self.definition)
+        definition["triage"]["triage_trigger"] = "always"
+        self.write_definition(definition)
+        result = self.validate()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("triage.triage_trigger", result.stderr)
+
+    def test_human_report_limits_must_be_positive(self):
+        definition = copy.deepcopy(self.definition)
+        definition["triage"]["human_report_max_lines"] = 0
+        self.write_definition(definition)
+        result = self.validate()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("human_report_max_lines", result.stderr)
+
     def test_explain_prints_human_summary(self):
         result = self.run_cli(
             "explain",

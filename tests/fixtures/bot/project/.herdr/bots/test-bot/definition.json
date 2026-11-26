@@ -45,9 +45,12 @@
   ],
   "triage": {
     "mode": "suggest_only",
+    "triage_trigger": "herdr_batch",
     "batch_interval_seconds": 1800,
     "max_batch_events": 20,
-    "max_context_events": 40
+    "max_context_events": 40,
+    "human_report_max_items_per_group": 5,
+    "human_report_max_lines": 40
   },
   "outputs": [
     {

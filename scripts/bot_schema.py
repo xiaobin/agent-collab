@@ -20,6 +20,7 @@ AGENT_KINDS = {"claude", "pi", "codex"}
 CONCURRENCY_MODES = {"forbid", "queue", "replace"}
 MEMORY_MODES = {"private", "shared", "team"}
 TRIAGE_MODES = {"suggest_only"}
+TRIAGE_TRIGGERS = {"manual", "herdr_batch"}
 
 DEFINITION_KEYS = {
     "schema_version",
@@ -444,7 +445,15 @@ def _validate_triage(value: Any, result: ValidationResult) -> None:
         return
     _check_keys(
         value,
-        {"mode", "batch_interval_seconds", "max_batch_events", "max_context_events"},
+        {
+            "mode",
+            "batch_interval_seconds",
+            "max_batch_events",
+            "max_context_events",
+            "triage_trigger",
+            "human_report_max_items_per_group",
+            "human_report_max_lines",
+        },
         "triage",
         result,
     )
@@ -453,6 +462,11 @@ def _validate_triage(value: Any, result: ValidationResult) -> None:
     _integer(value, "batch_interval_seconds", "triage", result, minimum=60)
     _integer(value, "max_batch_events", "triage", result, minimum=1)
     _integer(value, "max_context_events", "triage", result, minimum=1)
+    trigger = value.get("triage_trigger")
+    if trigger is not None and trigger not in TRIAGE_TRIGGERS:
+        result.errors.append("triage.triage_trigger: must be manual or herdr_batch")
+    _integer(value, "human_report_max_items_per_group", "triage", result, minimum=1)
+    _integer(value, "human_report_max_lines", "triage", result, minimum=1)
 
 
 def _workspace_root(definition: dict[str, Any]) -> str | None:

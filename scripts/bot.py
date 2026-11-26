@@ -33,6 +33,7 @@ from bot_runtime import (
 )
 from bot_schema import definition_digest, validate_definition
 from bot_adapters import AdapterError, get_adapter
+import bot_triage
 
 EXIT_OK = 0
 EXIT_INVALID = 2
@@ -497,6 +498,40 @@ def build_parser() -> argparse.ArgumentParser:
     resume.add_argument("--project-root", default=Path("."), type=Path)
     resume.add_argument("--bot-id", required=True)
     resume.set_defaults(func=cmd_resume)
+
+    triage = subparsers.add_parser("triage", help="prepare, apply, and render triage batches")
+    triage_sub = triage.add_subparsers(dest="triage_command", required=True)
+    triage_prepare = triage_sub.add_parser("prepare", help="create batches from unbatched events")
+    triage_prepare.add_argument("--project-root", default=Path("."), type=Path)
+    triage_prepare.add_argument("--bot-id", required=True)
+    triage_prepare.add_argument("--force", action="store_true")
+    triage_prepare.set_defaults(func=bot_triage.cmd_prepare)
+    triage_claim = triage_sub.add_parser("claim", help="claim a pending batch")
+    triage_claim.add_argument("--project-root", default=Path("."), type=Path)
+    triage_claim.add_argument("--bot-id", required=True)
+    triage_claim.add_argument("--batch-id", required=True)
+    triage_claim.add_argument("--attempt-id", required=True)
+    triage_claim.set_defaults(func=bot_triage.cmd_claim)
+    triage_apply = triage_sub.add_parser("apply", help="validate and append triage results")
+    triage_apply.add_argument("--project-root", default=Path("."), type=Path)
+    triage_apply.add_argument("--bot-id", required=True)
+    triage_apply.add_argument("--batch-id", required=True)
+    triage_apply.add_argument("--file", required=True, type=Path)
+    triage_apply.set_defaults(func=bot_triage.cmd_apply)
+    triage_dispose = triage_sub.add_parser("dispose", help="append a disposition")
+    triage_dispose.add_argument("--project-root", default=Path("."), type=Path)
+    triage_dispose.add_argument("--bot-id", required=True)
+    triage_dispose.add_argument("--triage-id", required=True)
+    triage_dispose.add_argument("--action", required=True, choices=sorted(bot_triage.DISPOSITION_ACTIONS))
+    triage_dispose.add_argument("--actor", required=True)
+    triage_dispose.add_argument("--note", default=None)
+    triage_dispose.add_argument("--task-id", default=None)
+    triage_dispose.set_defaults(func=bot_triage.cmd_dispose)
+    triage_report = triage_sub.add_parser("report", help="render a human-readable report")
+    triage_report.add_argument("--project-root", default=Path("."), type=Path)
+    triage_report.add_argument("--bot-id", required=True)
+    triage_report.add_argument("--batch-id", action="append", default=None)
+    triage_report.set_defaults(func=bot_triage.cmd_report)
     return parser
 
 
