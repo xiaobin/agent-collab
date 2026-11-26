@@ -102,6 +102,8 @@ description: 用于启动、推进、恢复或验收 agent 参与的项目任务
 
 详见 [状态与交接](references/handoff.md)。
 
-## 7. 自动化 Bot（阶段 1）
+## 7. 自动化 Bot
 
-项目明确要建立自动化 bot，且用户已给出 `goal_ref` 时，先按 [Bot 框架](references/bot-framework.md) 起草定义、校验、请求批准，再运行。阶段 1 只支持 `process` 运行时、`fake` 适配器和 `run --once`；不连接真实服务、不调用模型、不启动常驻循环。Bot 由 Agent 起草，用户批准，运行时启动；Bot 不能创建 Bot 或自行扩权。
+项目明确要建立自动化 bot，且用户已给出 `goal_ref` 时，先按 [Bot 框架](references/bot-framework.md) 起草定义、校验、请求批准，再运行。运行时已支持 `process` 运行时、`fake` 与只读 `feishu` 适配器、`run --once` 与 `--resident` 常驻模式；不调用模型改写用户数据，常驻与分诊只在批准范围内执行。Bot 由 Agent 起草，用户批准，运行时启动；Bot 不能创建 Bot 或自行扩权。
+
+用户要「接入飞书同步」「让待办每天自动拉下来」时，唯一入口是 [bot-onboarding](../bot-onboarding/SKILL.md)：Claude Code `/agent-collab:bot-onboarding`、Pi `/skill:bot-onboarding`、Codex `$agent-collab:bot-onboarding`。该 Skill 负责探测、生成配置、校验、请求批准、首次只读运行和报告；不要另起第二套命令让用户执行。

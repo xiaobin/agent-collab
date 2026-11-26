@@ -15,7 +15,10 @@ class PiPackageTest(unittest.TestCase):
         self.assertEqual(package["name"], plugin["name"])
         self.assertEqual(package["version"], plugin["version"])
         self.assertIn("pi-package", package["keywords"])
-        self.assertEqual(package["pi"]["skills"], ["./skills/project-collaboration"])
+        self.assertEqual(
+            package["pi"]["skills"],
+            ["./skills/project-collaboration", "./skills/bot-onboarding"],
+        )
         for relative in package["pi"]["skills"]:
             skill_dir = ROOT / relative
             self.assertTrue(skill_dir.is_dir(), relative)

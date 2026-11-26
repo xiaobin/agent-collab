@@ -12,7 +12,8 @@
   ],
   "pi": {
     "skills": [
-      "./skills/project-collaboration"
+      "./skills/project-collaboration",
+      "./skills/bot-onboarding"
     ]
   }
 }
