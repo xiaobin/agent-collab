@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.13] - 2026-11-26
+
+### Added
+
+- 采集成功后（`run --once` 且适配器为 `feishu`）自动打印人读摘要：空间名、未完成待办数、评论数、待办列表（工作项 ID、标题、当前节点、节点负责人，评论数按工作项归并），默认最多 10 条，其余提示「见报告文件」。
+- 新增 `scripts/bot_report.py` 与 `bot-report` Skill（Claude `/agent-collab:bot-report`、Pi `/skill:bot-report`、Codex `$agent-collab:bot-report`）：默认只读本地 `state/events.jsonl`、`state/state.json`、`state/user-cache.json` 渲染摘要，并写入 `.herdr/bots/<bot>/reports/summary-<UTC>.md`。
+- `bot_report.py report --sync`：仅在用户明确要求时先执行一次 `bot.py run --once`，沿用批准门禁；未批准返回退出码 3，不自动重批。
+- 空态、未初始化、批准失效、token 失效均有明确提示，不编造内容；未知负责人/作者显示 `未知（user_key）`。
+
+### Notes
+
+- 摘要渲染不额外调用 meegle；`--sync` 的全部门禁与只读范围沿用既有流程。
+- README 新增「接入后随时查看」。
+
 ## [0.4.12] - 2026-11-26
 
 ### Added
