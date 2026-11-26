@@ -1,6 +1,8 @@
 # agent-collab
 
-给你和团队统一维护的项目协作包：把目标确认、过程沟通、人机决策边界、状态恢复和证据验收放进同一版本化正本，项目仓库只保留自己的事实与状态。
+给人 + 多个 coding agent 共用、可版本化维护的项目协作规范包：把目标确认、过程沟通、人机决策边界、状态恢复和证据验收放进同一正本，项目仓库只保留自己的事实与状态。
+
+它统一“怎么合作”，不负责“谁来干活”：不是 agent 本身，也不是调度器、CI 或权限系统。文字修订、测试和文档可由 agent 维护；目标、契约、权限和发布仍由人确认。
 
 同一份公共流程支持三种入口：
 
@@ -21,6 +23,31 @@
 - `scripts/verify_pi.sh`：隔离安装 Pi package，确认 Skill 发现和已安装包装器。
 - `scripts/verify_codex.sh`：隔离安装 Codex Plugin，确认 Skill 发现和已安装包装器。
 - `docs/`：接入、架构和团队治理约定。
+
+## 可选：只读 Bot 运行内核与飞书分诊
+
+仓库还包含一套与 Skill 体系独立的声明式运行内核，用于把「定时拉取 → 分诊 → 人读报告 → 按需派发」这类长期任务做成可批准的 bot。**bot 是长期身份，不是长期模型会话**：持久的是定义、批准快照和游标，模型只按批做判断。
+
+- `scripts/bot.py`：统一 CLI，子命令 `validate` / `explain` / `approve` / `run`（`--once` 或 `--resident`）/ `status` / `stop` / `resume` / `triage`（`prepare` / `claim` / `apply` / `dispose` / `report` / `dispatch`）。
+- `scripts/bot_schema.py`：定义与项目策略校验、适配器配置解析、身份绑定与定义摘要计算。适配器配置优先级为 `MEEGLE_*` 环境变量 > 定义中 `adapter.config_ref` 指向的 `.herdr/bots/<bot-id>/adapter-config.json` > 内置默认（仅非身份项）。飞书适配器要求 `project_key`、`expected_user_key` 必填且无默认值，绝不兜底；配置错误在首次远程调用前非零退出。批准快照记录定义、项目策略和适配器配置的 SHA-256，任一漂移都要求重新批准，运行中进入 `approval_invalidated` 后必须重新批准；`stop` 之后必须显式 `resume`。
+- `scripts/bot_runtime.py`：状态机、游标、幂等事件、单实例锁、心跳租约、指数退避、优雅停止、失败预算与运行统计。
+- `scripts/bot_adapters/`：`fake`（合成数据测试）与 `feishu_sync`（飞书只读采集：我的待办 + 评论，可按 `work_item_id` 定向）。实际只调用 `meegle auth status` / `user me` / `user search` / `mywork todo` / `workitem get` / `comment list`，任何写操作直接拒绝；姓名缓存 TTL 为成功 24 小时、未命中 5 分钟。网络抖动与 token 失效分开处理：前者按退避重试，后者停机并要求人工重新登录。
+- `scripts/bot_triage.py`：分诊、人读报告与结果应用。结论必须由真实 Agent 逐条产出并标 `source=agent`；启发式结论只能标 `source=heuristic`，由 `--source heuristic` 单独渲染，不混入默认报告。
+- `scripts/bot_dispatch.py`：`triage dispatch --watch [--prepare]` 派发就绪批次；批次由 `triage prepare` 按 `triage.batch_interval_seconds` 或 `triage.max_batch_events` 生成。派发经 Herdr 按 workspace label + cwd 选空闲 Agent pane，排除派发方自身与 shell/unknown pane，目标 working 时保持 `pending` 并重试。
+- `templates/bot-definition.json`、`templates/bot-policy.json`、[Bot 接入说明](skills/project-collaboration/references/bot-framework.md)：模板与接入文档。
+- 设计正本：[通用 Bot 框架](docs/bot-framework-design.md)（身份与分级创建、L0–L4 权限取交集、审批绑定），[飞书场景实例](docs/feishu-sync-design.md)。
+
+最小试用（`fake` 适配器，不触网）：在项目根准备 `.herdr/bot-policy.json` 与 `.herdr/bots/<bot-id>/{definition.json,adapter-config.json}`，然后：
+
+```bash
+python3 scripts/bot.py validate --definition .herdr/bots/<bot-id>/definition.json
+python3 scripts/bot.py approve  --definition .herdr/bots/<bot-id>/definition.json \
+  --approval-id <approval-id> --approver-ref <user-ref>
+python3 scripts/bot.py run      --bot-id <bot-id> --once
+python3 scripts/bot.py status   --bot-id <bot-id>
+```
+
+运行约束：只读飞书采集、报告只写本地、不向飞书写回评论；`run --resident` 的单实例锁基于本地文件系统语义，NFS 挂载未验证；token 失效后的自动续期未实现，需要人工重新登录。
 
 ## 运行前置
 
@@ -297,6 +324,8 @@ codex plugin add agent-collab@agent-collab
 
 ## 当前边界
 
+- Bot 运行内核只实现只读采集、分诊建议与建议派发；本地处置只记录 `triage dispose`，外部写操作未开放，飞书写操作在适配器层直接拒绝。
+- 分诊语义由真实 Agent 判断，单元测试只保证管道、幂等、授权与字段形状，不能保证分类正确；同一批事件换 agent 会话可能得到不同分类，语义验收需要按批抽样人工核对。
 - v0.4 在同一正本上增加可选 Herdr 编排规范、完整 dispatch ledger 和验收/修复门禁；沿用 Pi 与 Codex 分发和三端脚本入口。
 - Herdr 适配只定义项目无关的调度纪律；具体仓库、pane、agent、测试环境和项目特例必须由项目自己维护，不能复制成公共通用值。
 - 三种工具的 Skill 都是模型指令，不是权限系统；校验脚本不能判断目标是否正确、测试是否有业务价值，也不能替代独立复审和人的业务验收。
