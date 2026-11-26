@@ -33,6 +33,7 @@ from bot_runtime import (
 )
 from bot_schema import definition_digest, validate_definition
 from bot_adapters import AdapterError, get_adapter
+import bot_dispatch
 import bot_triage
 
 EXIT_OK = 0
@@ -527,6 +528,13 @@ def build_parser() -> argparse.ArgumentParser:
     triage_dispose.add_argument("--note", default=None)
     triage_dispose.add_argument("--task-id", default=None)
     triage_dispose.set_defaults(func=bot_triage.cmd_dispose)
+    triage_dispatch = triage_sub.add_parser("dispatch", help="dispatch ready batches to an idle Herdr pane")
+    triage_dispatch.add_argument("--project-root", default=Path("."), type=Path)
+    triage_dispatch.add_argument("--bot-id", required=True)
+    triage_dispatch.add_argument("--herdr-bin", default=None)
+    triage_dispatch.add_argument("--watch", action="store_true", help="keep dispatching ready batches")
+    triage_dispatch.add_argument("--interval-seconds", type=float, default=30.0)
+    triage_dispatch.set_defaults(func=bot_dispatch.cmd_dispatch)
     triage_report = triage_sub.add_parser("report", help="render a human-readable report")
     triage_report.add_argument("--project-root", default=Path("."), type=Path)
     triage_report.add_argument("--bot-id", required=True)

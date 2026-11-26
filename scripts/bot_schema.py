@@ -21,6 +21,14 @@ CONCURRENCY_MODES = {"forbid", "queue", "replace"}
 MEMORY_MODES = {"private", "shared", "team"}
 TRIAGE_MODES = {"suggest_only"}
 TRIAGE_TRIGGERS = {"manual", "herdr_batch"}
+DISPATCH_KEYS = {
+    "mode",
+    "workspace_label",
+    "cwd_marker",
+    "herdr_bin",
+    "ack_timeout_seconds",
+    "output_dir",
+}
 
 DEFINITION_KEYS = {
     "schema_version",
@@ -453,6 +461,7 @@ def _validate_triage(value: Any, result: ValidationResult) -> None:
             "triage_trigger",
             "human_report_max_items_per_group",
             "human_report_max_lines",
+            "dispatch",
         },
         "triage",
         result,
@@ -467,6 +476,42 @@ def _validate_triage(value: Any, result: ValidationResult) -> None:
         result.errors.append("triage.triage_trigger: must be manual or herdr_batch")
     _integer(value, "human_report_max_items_per_group", "triage", result, minimum=1)
     _integer(value, "human_report_max_lines", "triage", result, minimum=1)
+    if "dispatch" in value:
+        _validate_dispatch(value["dispatch"], result)
+
+
+def _validate_dispatch(value: Any, result: ValidationResult) -> None:
+    if not isinstance(value, dict):
+        result.errors.append("triage.dispatch: must be an object")
+        return
+    _check_keys(value, DISPATCH_KEYS, "triage.dispatch", result)
+    if not _require(
+        value, ["mode", "workspace_label", "cwd_marker"], "triage.dispatch", result
+    ):
+        return
+    if value.get("mode") != "herdr":
+        result.errors.append("triage.dispatch.mode: must be herdr")
+    label = value.get("workspace_label")
+    if isinstance(label, str):
+        if not label.strip():
+            result.errors.append("triage.dispatch.workspace_label: must not be empty")
+        if ":" in label or re.search(r"(?i)\bw\d+:p\d+\b", label):
+            result.errors.append(
+                "triage.dispatch.workspace_label: use a workspace label, not a pane id"
+            )
+    else:
+        result.errors.append("triage.dispatch.workspace_label: must be a string")
+    _string(value, "cwd_marker", "triage.dispatch", result)
+    _string(value, "herdr_bin", "triage.dispatch", result, allow_empty=False)
+    _string(value, "output_dir", "triage.dispatch", result, allow_empty=False)
+    output_dir = value.get("output_dir")
+    if isinstance(output_dir, str) and output_dir:
+        candidate = Path(output_dir)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            result.errors.append(
+                "triage.dispatch.output_dir: must be a relative path inside the bot directory"
+            )
+    _integer(value, "ack_timeout_seconds", "triage.dispatch", result, minimum=1)
 
 
 def _workspace_root(definition: dict[str, Any]) -> str | None:

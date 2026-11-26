@@ -110,8 +110,8 @@ CLI 与 Agent 之间通过项目本地的持久化事件队列连接，不让常
 1. CLI 把通过去重的新增评论和任务变化追加到 `state_dir/events.jsonl`，事件包含稳定 `event_id`、类型、工作项标识、发生时间、首次发现时间和原始结构化内容引用。
 2. 当存在未分诊事件，并且距上一批次达到 `triage_batch_interval_seconds`，或待分诊数量达到 `triage_max_batch_events` 时，CLI 原子生成一个待分诊批次。空轮询不创建批次。
 3. CLI 只在面板输出一条简短的 `TRIAGE_READY` 摘要，包含批次 ID、事件数和待分诊文件路径，不逐条调用模型。
-4. 默认 `triage_trigger=herdr_batch` 时，由现有 Herdr 协调者把**整个批次**派给现有协作 Agent；协调者不得打断仍在执行其他任务的 Agent，忙时保持队列等待。也可以为分诊启动一个按需 Agent，完成后回收，不让它常驻采集 pane。
-5. `triage_trigger=manual` 时只生成批次和提示，由用户手动触发同一分诊流程。没有可用协调者时，`herdr_batch` 同样保持持久化待办，不假装已经分诊，也不反复发新派单。
+4. 默认 `triage_trigger=herdr_batch` 时，`triage dispatch` 按配置中的 workspace label + cwd 解析目标 pane，优先选择 `agent_status=idle` 的 Agent；协调者不得打断仍在执行其他任务的 Agent，忙时保持队列等待。派发前先 claim，同一批次只允许一个派发生效；`pane run` 的 0 退出只表示入队，必须等 Agent 写出完整结果并通过 `apply` 校验。没有可用协调者时保持持久化待办，不假装已经分诊，也不反复发新派单。
+5. `triage_trigger=manual` 时只生成批次和提示，由用户手动触发同一分诊流程。`triage dispatch --watch` 可作为项目侧自动派发入口；配置缺失、Herdr 不可用、无 idle pane 都保持 `pending` 并记录原因。
 
 每个派单必须有 `goal_ref`、`batch_id`、`attempt_id`、绝对项目 cwd 和明确写范围。第一版分诊 Agent 对项目代码只读，只允许写本组件的分诊状态和报告目录。认证失效、配置错误等运行异常由 CLI 直接报警，不消耗一次模型分诊；业务事件才进入上述批次。
 
@@ -266,6 +266,12 @@ status: proposed
 - 报告：全量 Markdown 报告 1538 行；面板摘要 38 行，低于 40 行上限。面板顶部只给高优先级总数和分组分布（需返工 11、需人决策 6、需确认契约/范围 8、仅知会 1），每个事件只在自己的分组出现一次，组头标“其中 N 项标 [高]”；`@姓名<!-- mention:... -->` 中的 HTML 元数据已剥离，只保留 `@姓名`。
 - 未执行任何飞书写操作；分诊结论仍为 `suggest_only`，分类标签不是执行授权。
 
+### 阶段 3 Herdr 派发验证
+
+- 使用一个临时 workspace label 和临时 pane 验证，不占用调度会话，也不按 pane 编号配置目标。
+- 假 Herdr 覆盖：idle 正常派发、working 时保持 pending、Herdr 不存在时保持 pending、重复调用不重复发送、Agent 未产出时超时并记录缺失事件、只对缺失事件发一次补救提示、输出非法时不标记已分诊。
+- 真实临时 pane：派发一个无害任务，Agent 读取 batch 文件并写出结果；`triage dispatch` 等到输出后调用现有 `apply` 和 `report`，记录 `state=applied`、`pane_id`、`classification_counts` 和 `result_count`。真实 pane 验证后关闭，不影响常驻采集进程。
+
 ## 配置化设计
 
 ### 配置项
@@ -286,6 +292,10 @@ status: proposed
 | `initial_report_mode` | `AGENT_COLLAB_FEISHU_INITIAL_REPORT_MODE` | 否 | `full` | `full` 为首轮建基线并由 Agent 生成首份人读报告，`silent` 为静默建基线；之后均只报增量 |
 | `report_targets` | `AGENT_COLLAB_FEISHU_REPORT_TARGETS` | 否 | `["herdr_panel", "file"]` | 人读报告的输出位置；至少一项，当前只允许 `herdr_panel` 和 `file`，不允许 `feishu_comment` |
 | `triage_trigger` | `AGENT_COLLAB_FEISHU_TRIAGE_TRIGGER` | 否 | `herdr_batch` | `herdr_batch` 表示由现有 Herdr 协调者按批派发；`manual` 只生成待分诊批次；其他值非法 |
+| `triage.dispatch.workspace_label` | 无 | `herdr_batch` 时必填 | 无 | Herdr workspace 的 `label`；只允许 label/约定名，禁止 `w4:p1` 这类 pane 编号；缺失时保持 pending |
+| `triage.dispatch.cwd_marker` | 无 | `herdr_batch` 时必填 | 无 | 目标 Agent 工作目录；相对路径按项目根解析，只匹配该 workspace 内 cwd 相同或位于其下的 pane |
+| `triage.dispatch.ack_timeout_seconds` | 无 | 否 | `300` | 正整数；派发后等待 Agent 结果文件的最长秒数，超时记录缺失事件，不标记已分诊 |
+| `triage.dispatch.output_dir` | 无 | 否 | `state/triage/output` | 相对于 bot 目录；Agent 结果文件目录，必须留在 bot 目录内 |
 | `triage_batch_interval_seconds` | `AGENT_COLLAB_FEISHU_TRIAGE_BATCH_INTERVAL_SECONDS` | 否 | `1800` | 正整数，建议不低于 300 秒；存在未分诊事件时，距上一批达到该间隔才生成新批次 |
 | `triage_max_batch_events` | `AGENT_COLLAB_FEISHU_TRIAGE_MAX_BATCH_EVENTS` | 否 | `20` | 正整数；待分诊事件达到该数量时提前生成批次，避免持续积压 |
 | `triage_mode` | `AGENT_COLLAB_FEISHU_TRIAGE_MODE` | 否 | `suggest_only` | 当前只允许 `suggest_only`；只输出分类和建议，不执行本地处置或飞书写操作，其他值直接报不支持 |
@@ -374,6 +384,12 @@ No remote request was made and no state was changed.
   "initial_report_mode": "full",
   "report_targets": ["herdr_panel", "file"],
   "triage_trigger": "herdr_batch",
+  "dispatch": {
+    "mode": "herdr",
+    "workspace_label": "<WORKSPACE_LABEL>",
+    "cwd_marker": "<PROJECT_CWD>",
+    "ack_timeout_seconds": 300
+  },
   "triage_batch_interval_seconds": 1800,
   "triage_max_batch_events": 20,
   "triage_mode": "suggest_only",

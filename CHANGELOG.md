@@ -2,6 +2,21 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.9] - 2026-11-26
+
+### Added
+
+- 新增 `triage dispatch`：按 `triage.dispatch.workspace_label` + `cwd_marker` 解析 Herdr workspace 中的 idle Agent pane，不按 pane 编号配置目标。
+- 派发前使用现有 `claim`/`attempt_id` 占批次；同一批次重复调用不会重复发送；`pane run` 退出 0 后仍等待 Agent 结果文件并通过 `apply` 校验，超时或非法输出不写“已分诊”。超时时记录缺失事件，只对缺失事件发一次补救提示，不重发整批。
+- 忙碌 pane 保持待办并记录等待原因；Herdr 不可用、无配置、无匹配 pane 均保持 `pending`。
+- `triage dispatch --watch` 可作为项目侧自动派发入口；`dispatch.jsonl` 记录批次、attempt、pane、状态、原因和缺失事件。
+- 新增 `tests/test_bot_dispatch.py`，覆盖 idle 派发、忙碌等待、不可用、重复调用、超时补救、非法输出和 pane 编号拒绝。
+
+### Compatibility
+
+- `triage_trigger=manual` 行为不变；未配置 `triage.dispatch` 的 `herdr_batch` 批次仍保持 pending。
+- 派发只传 batch_id、batch 文件路径、结果文件路径和分类口径，不传凭据或完整事件库；仍不执行飞书写操作。
+
 ## [0.4.8] - 2026-11-26
 
 ### Fixed

@@ -1,8 +1,8 @@
 # 通用 Bot 自动创建与运行框架：从远景到落地
 
-状态：**阶段 1、阶段 2 第一步、元数据补齐、只读常驻采集与分诊/人读输出（manual）已实施；Herdr 自动分诊派发和 Agent 常驻分诊仍未实施**。已落地定义校验、批准快照、`fake` 适配器、`run --once`/`run --resident`、单实例锁、心跳与租约、健康/生命周期、无模型测试，以及真实 `feishu` 适配器的只读拉取、作者姓名缓存、附件判重键和项目/用户批准绑定；分诊批次、结构化结果校验、处置记录和 Markdown/面板报告由确定性 CLI 完成，分诊结论由按需 Agent 提供，CLI 不调用模型。
+状态：**阶段 1、阶段 2 第一步、元数据补齐、只读常驻采集、分诊/人读输出与 Herdr 自动派发已实施；Agent 常驻分诊仍未实施**。已落地定义校验、批准快照、`fake` 适配器、`run --once`/`run --resident`、单实例锁、心跳与租约、健康/生命周期、无模型测试，以及真实 `feishu` 适配器的只读拉取、作者姓名缓存、附件判重键和项目/用户批准绑定；分诊批次、结构化结果校验、处置记录和 Markdown/面板报告由确定性 CLI 完成，分诊结论由按需 Agent 提供，CLI 不调用模型。
 
-阶段 1 实现位置：`scripts/bot.py`、`scripts/bot_schema.py`、`scripts/bot_runtime.py`、`scripts/bot_adapters/`、`skills/project-collaboration/scripts/bot.sh`、`skills/project-collaboration/references/bot-framework.md`、`templates/bot-definition.json`、`templates/bot-policy.json`、`tests/test_bot_*.py`。阶段 2 第一步实现位置：`scripts/bot_adapters/feishu_sync.py`、`tests/test_feishu_adapter.py`。常驻采集实现位置：`scripts/bot_runtime.py` 的 `run_resident`、`scripts/bot.py` 的 `--resident`、`tests/test_bot_resident.py`。分诊实现位置：`scripts/bot_triage.py`、`tests/test_bot_triage.py`；真实只读验收只在临时项目运行，结果不进入公共仓。
+阶段 1 实现位置：`scripts/bot.py`、`scripts/bot_schema.py`、`scripts/bot_runtime.py`、`scripts/bot_adapters/`、`skills/project-collaboration/scripts/bot.sh`、`skills/project-collaboration/references/bot-framework.md`、`templates/bot-definition.json`、`templates/bot-policy.json`、`tests/test_bot_*.py`。阶段 2 第一步实现位置：`scripts/bot_adapters/feishu_sync.py`、`tests/test_feishu_adapter.py`。常驻采集实现位置：`scripts/bot_runtime.py` 的 `run_resident`、`scripts/bot.py` 的 `--resident`、`tests/test_bot_resident.py`。分诊实现位置：`scripts/bot_triage.py`、`tests/test_bot_triage.py`；Herdr 派发实现位置：`scripts/bot_dispatch.py`、`tests/test_bot_dispatch.py`；真实只读验收只在临时项目运行，结果不进入公共仓。
 
 调研基线：DS-Bot（`github.com/Fei-Craft/DS-Bot`，commit `d104d9c`）、OpenMausBot（`github.com/milind-soni/OpenMausBot`）、Hermes Bot Mode（`github.com/NousResearch/Hermes-Bot-Mode`）。三者都是桌面应用或桌面插件，形态与本仓不同；本文只抽取可复用的机制，不复制产品。
 
@@ -194,7 +194,7 @@ tests/
 └── fixtures/bot/                  # 合成事件、批准、错误与恢复场景
 ```
 
-仍规划、尚未创建：`feishu-sync.sh`、`references/feishu-sync.md`、场景模板 `templates/bots/*` 和 Agent 自动派发契约。已创建：常驻只读运行时 `run_resident`（入口 `bot.py run --resident`）和分诊/报告 CLI `scripts/bot_triage.py`（入口 `bot.py triage prepare|claim|apply|dispose|report`）。
+仍规划、尚未创建：`feishu-sync.sh`、`references/feishu-sync.md`、场景模板 `templates/bots/*` 和 Agent 常驻会话契约。已创建：常驻只读运行时 `run_resident`（入口 `bot.py run --resident`）、分诊/报告 CLI `scripts/bot_triage.py`（入口 `bot.py triage prepare|claim|apply|dispose|report`）和 Herdr 自动派发 `scripts/bot_dispatch.py`（入口 `bot.py triage dispatch`）。
 
 仍只有一个 `project-collaboration` Skill。需要扩展的是包装器、参考文档和无模型测试，不是为每个 bot 新增一份常驻流程正文。
 
@@ -1016,7 +1016,7 @@ MVP 只需要：
 | 确定性 Runtime | 已实现单次与只读常驻；批次/Agent 未实现 |
 | 适配器接口与飞书适配器 | 已实现 fake 与 feishu 只读适配器 |
 | 锁、游标、恢复 | 已实现单实例锁、配额、逐项游标、心跳/租约、认证停止、退避 |
-| 批次、分诊、报告 | 已实现 manual 批次、结果校验、处置记录与 Markdown/面板报告；自动派发未实现 |
+| 批次、分诊、报告 | 已实现批次、结果校验、处置记录、Markdown/面板报告，以及按 workspace label + cwd 的 Herdr 自动派发；Agent 常驻分诊未实现 |
 | Agent 调用契约（Claude/Pi/Codex） | 未验证 |
 | 三端包装器与安装副本测试 | 已有 `bot.sh` 与包装器测试；三端安装副本未单独验证 |
 | 部署（Herdr/cron/launchd/systemd） | 只有设计 |
@@ -1026,7 +1026,7 @@ MVP 只需要：
 ### 16.2 关键缺口
 
 1. **Agent 调用契约**：三端 CLI 的非交互调用、会话恢复、权限模式、输出解析都还没有实测；分诊结论目前由人工/外部 Agent 生成。
-2. **自动分诊派发**：`triage_trigger=herdr_batch` 仍只生成 pending 批次，协调者派单、忙碌等待、失败恢复和整批一次调用尚未接线。
+2. **Agent 常驻分诊**：`herdr_batch` 已有按 label + cwd 的派发、忙碌等待、单批 claim、输出核验和超时记录；尚未实现常驻 Agent 会话、跨批次并发控制和长期失败恢复。
 3. **部署与恢复**：Herdr pane、cron、launchd、systemd 的锁和重启语义不同，必须逐个验证。
 4. **可观测与验收**：健康、滞后、失败分类已有字段，但告警、长期运行指标和事故演练未完成。
 5. **多项目与多 bot 隔离**：`max_bots`/`max_active_bots` 已执行，但多项目并发、身份隔离和成本边界未实测。
@@ -1064,7 +1064,7 @@ MVP 只需要：
 - 单次 `once` 的真实只读拉取验收（真实数据只落在临时项目，不进公共仓）；
 - 只读常驻采集：`run --resident`、单实例 resident 锁、心跳/租约、认证停止、指数退避、run.log、SIGTERM 收尾、重启从游标续跑，以及真实短间隔多轮验收。
 
-尚未交付：项目级定时部署（Herdr/cron/launchd/systemd）、分诊 Agent 自动派发、真实项目长期连续验收。
+尚未交付：项目级定时部署（Herdr/cron/launchd/systemd）、Agent 常驻分诊、真实项目长期连续验收。
 
 退出条件（完整阶段 2）：连续多轮（单次或常驻）不重复、不漏项；认证失效不推进游标；报告与机器结论同源；不写飞书。
 
@@ -1078,7 +1078,7 @@ MVP 只需要：
 - 六类语义结论、`source`、urgency、`supersedes`、同 event+policy 唯一、处置记录；
 - 从同一份 `results.jsonl` 生成全量 Markdown 与受限面板摘要，空批次静默、pending 明确显示。
 
-尚未交付：`herdr_batch` 自动派发、跨三端 Agent 调用、169 条结论的人类完整验收（当前为 11 条抽样 + 独立复核抽检）、报告投递到 Herdr 面板。退出条件：真实批次全覆盖、分类可复核、纠正链可追溯、面板行数受限且不丢失授权提示。
+尚未交付：Agent 常驻分诊、跨三端 Agent 调用、169 条结论的人类完整验收（当前为 11 条抽样 + 独立复核抽检）、报告投递到 Herdr 面板。退出条件：真实批次全覆盖、分类可复核、纠正链可追溯、面板行数受限且不丢失授权提示。
 
 #### 阶段 3：常驻与部署
 
