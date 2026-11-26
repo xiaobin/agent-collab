@@ -50,6 +50,21 @@ class BotOnboardingSkillTest(unittest.TestCase):
         # A stopped login or a changed definition must never be auto-approved.
         self.assertIn("approval_invalidated", commands)
 
+    def test_readme_shows_only_the_agent_entry(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        start = readme.index("### 最小试用")
+        end = readme.index("<details>", start)
+        quickstart = readme[start:end]
+        for command in (
+            "/agent-collab:bot-onboarding",
+            "/skill:bot-onboarding",
+            "$agent-collab:bot-onboarding",
+        ):
+            self.assertIn(command, quickstart)
+        self.assertNotIn("python3", quickstart)
+        self.assertNotIn("feishu-trial", quickstart)
+        self.assertIn("帮我接入飞书同步", quickstart)
+
     def test_project_collaboration_points_to_the_single_entry(self):
         text = (ROOT / "skills" / "project-collaboration" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("bot-onboarding", text)
