@@ -531,6 +531,7 @@ def build_parser() -> argparse.ArgumentParser:
     triage_report.add_argument("--project-root", default=Path("."), type=Path)
     triage_report.add_argument("--bot-id", required=True)
     triage_report.add_argument("--batch-id", action="append", default=None)
+    triage_report.add_argument("--source", choices=sorted(bot_triage.RESULT_SOURCES), default="agent")
     triage_report.set_defaults(func=bot_triage.cmd_report)
     return parser
 

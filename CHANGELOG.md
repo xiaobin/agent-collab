@@ -2,6 +2,28 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.7] - 2026-11-26
+
+### Changed
+
+- 分诊分类改为按评论相对“已交付内容”的意图判断：`correction_of_delivered_work`、`answer_to_my_question`、`clarification_request`、`handoff_or_notice`、`scope_or_contract_change`、`needs_more_context`；`triage_policy_version` 升为 `triage-v2`。
+- 结果新增必填 `source`（`agent`/`heuristic`）；`correction_of_delivered_work` 必须为高优先级。报告默认只读 `source=agent`，启发式结果必须用 `--source heuristic` 单独渲染，不混在同一份报告。
+- 报告条目增加判定依据和来源，避免只展示模板化建议。
+- 真实 169 条验证中，独立复核抽检发现 2 条误判（空正文附件、混合契约意图），已用 `supersedes` 纠正；最终 169 条有效结论，`results.jsonl` 保留 171 行（169 有效 + 2 条纠正链）。
+
+### Fixed
+
+- `results.jsonl` 的 `author` 从批次事件快照回填；作者缺失写 `unknown`，不再留空。真实 171 行 author 覆盖率 171/171，其中 8 条为 `unknown`。
+- `evidence_refs` 和 `uncertainties` 必须以 JSON 数组保存；报告加载时拒绝 list 的字符串表示，并给出字段级错误。
+- 报告剥离 `<!-- mention:... -->` 元数据，只保留 `@姓名`。
+- 面板不再把高优先级条目跨组重复列出：顶部只给总数和分组分布，事件只在所属分组出现一次，组头标“其中 N 项标 [高]”。
+
+### Compatibility
+
+- 0.4.6 的 `triage-v1` 结论和旧四分类不再被新报告采用；需要按新口径重新分诊。已提交的批次可保留原文，但 `results.jsonl` 中的旧结论不应混入 `triage-v2` 报告。
+- 批次、幂等、原子写、并发锁、fail-closed 和人读分组/行数限制保持不变。
+- 仍为只读、`suggest_only`，不执行飞书写操作，不调用模型命令行，不重启常驻进程。
+
 ## [0.4.6] - 2026-11-26
 
 ### Added

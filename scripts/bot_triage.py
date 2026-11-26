@@ -30,19 +30,24 @@ from bot_runtime import (
 )
 from bot_schema import validate_definition
 
-POLICY_VERSION = "triage-v1"
+POLICY_VERSION = "triage-v2"
 CLASSIFICATIONS = {
-    "local_action_candidate",
-    "needs_user_confirmation",
+    "correction_of_delivered_work",
+    "answer_to_my_question",
+    "clarification_request",
+    "handoff_or_notice",
+    "scope_or_contract_change",
     "needs_more_context",
-    "informational",
 }
+RESULT_SOURCES = {"agent", "heuristic"}
 URGENCIES = {"high": 0, "normal": 1, "low": 2}
 GROUP_ORDER = [
-    ("needs_user_confirmation", "需要你决定"),
-    ("local_action_candidate", "可自行处理候选（仅建议）"),
+    ("correction_of_delivered_work", "需返工"),
+    ("clarification_request", "需人决策"),
+    ("scope_or_contract_change", "需确认契约/范围"),
+    ("answer_to_my_question", "已回答/知会"),
+    ("handoff_or_notice", "仅知会"),
     ("needs_more_context", "待补上下文"),
-    ("informational", "仅知会"),
 ]
 DISPOSITION_ACTIONS = {"accepted", "dismissed", "deferred", "noted", "handed_off"}
 TRIAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -397,7 +402,14 @@ def claim_batch(project_root: Path, bot_id: str, batch_id: str, attempt_id: str)
 
 
 def _load_results(project_root: Path, bot_id: str) -> list[dict[str, Any]]:
-    return _read_jsonl(project_root, results_path(project_root, bot_id))
+    rows = _read_jsonl(project_root, results_path(project_root, bot_id))
+    for index, row in enumerate(rows):
+        for field in ("evidence_refs", "uncertainties"):
+            if not isinstance(row.get(field), list):
+                raise TriageError(
+                    f"results[{index}].{field}: must be a JSON array, not a string"
+                )
+    return rows
 
 
 def _effective_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -419,6 +431,7 @@ def _validate_result(result: Any, batch: dict[str, Any], index: int) -> dict[str
         "batch_id",
         "triage_policy_version",
         "classification",
+        "source",
         "urgency",
         "rationale",
         "evidence_refs",
@@ -443,6 +456,10 @@ def _validate_result(result: Any, batch: dict[str, Any], index: int) -> dict[str
         raise TriageError(f"{where}.event_id: not in the batch")
     if result["classification"] not in CLASSIFICATIONS:
         raise TriageError(f"{where}.classification: unsupported value")
+    if result["source"] not in RESULT_SOURCES:
+        raise TriageError(f"{where}.source: must be agent or heuristic")
+    if result["classification"] == "correction_of_delivered_work" and result["urgency"] != "high":
+        raise TriageError(f"{where}.urgency: corrections of delivered work default to high")
     if result["urgency"] not in URGENCIES:
         raise TriageError(f"{where}.urgency: must be high, normal, or low")
     for field in ("rationale", "recommended_action", "required_authorization"):
@@ -540,6 +557,7 @@ def _apply_results_locked(
                     "batch_id",
                     "triage_policy_version",
                     "classification",
+                    "source",
                     "urgency",
                     "rationale",
                     "evidence_refs",
@@ -577,6 +595,16 @@ def _apply_results_locked(
         if missing:
             raise TriageError("results do not cover every event: " + ", ".join(missing))
     to_append = [result for result in incoming if result["event_id"] not in already]
+    event_authors: dict[str, str] = {}
+    for event in batch.get("events", []):
+        if not isinstance(event, dict):
+            continue
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        author = payload.get("creator_name") or payload.get("creator_user_key") or "unknown"
+        event_authors[str(event.get("event_id", ""))] = str(author)
+    for result in to_append:
+        if not result.get("author"):
+            result["author"] = event_authors.get(str(result.get("event_id")), "unknown")
     created_at = now_iso()
     if to_append:
         if not correction_only:
@@ -680,7 +708,7 @@ def _event_meta(event: dict[str, Any], work_items: dict[str, str]) -> dict[str, 
         work_item_id = source.get("work_item_id")
     work_item_id = work_item_id if isinstance(work_item_id, str) else ""
     title = work_items.get(work_item_id, work_item_id or "未知工作项")
-    author = payload.get("creator_name") or payload.get("creator_user_key") or ""
+    author = payload.get("creator_name") or payload.get("creator_user_key") or "unknown"
     created = payload.get("created_at") or event.get("received_at") or ""
     content = payload.get("content") if isinstance(payload.get("content"), str) else ""
     attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
@@ -704,6 +732,7 @@ def _event_meta(event: dict[str, Any], work_items: dict[str, str]) -> dict[str, 
 
 
 def _short(text: str, limit: int) -> str:
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
     compact = " ".join(text.split())
     if len(compact) <= limit:
         return compact
@@ -720,7 +749,9 @@ def _result_lines(result: dict[str, Any], meta: dict[str, str]) -> list[str]:
     return [
         f"### {marker} {meta['title']} · {meta['author']} · {meta['created']}".strip(),
         f"- 发生了什么：{_short(meta['content'], 180) or '状态或字段发生变化'}",
-        f"- 对方在问什么：{_short(question, 180)}",
+        f"- 核心内容：{_short(question, 180)}",
+        f"- 判定依据：{_short(str(result.get('rationale', '')), 180)}",
+        f"- 来源：{result.get('source', 'unknown')}",
         f"- 建议动作：{_short(str(result.get('recommended_action', '')), 180)}",
         f"- 需要谁授权：{_short(str(result.get('required_authorization', '')), 120)}",
         f"- 证据：{evidence}",
@@ -731,7 +762,8 @@ def _panel_line(result: dict[str, Any], meta: dict[str, str]) -> str:
     marker = "[高] " if result.get("urgency") == "high" else ""
     question = result.get("question") or _short(meta["content"], 60) or "见完整报告"
     return (
-        f"- {marker}{_short(meta['title'], 28)}：{_short(question, 60)}"
+        f"- {marker}{_short(meta['title'], 28)} · {_short(meta['author'], 12)}："
+        f"{_short(question, 60)}"
         f" → {_short(str(result.get('recommended_action', '')), 60)}"
         f"（授权：{_short(str(result.get('required_authorization', '')), 24)}）"
     )
@@ -772,6 +804,7 @@ def render_report(
     batch_ids: list[str],
     *,
     only_batch: bool,
+    source: str = "agent",
 ) -> str | None:
     definition = load_definition(project_root, bot_id)
     _check_runtime_health(project_root, bot_id)
@@ -792,7 +825,12 @@ def render_report(
                     batches.append(read_json(project_root, directory / "batch.json"))
                 except (FileNotFoundError, OSError, RuntimeError, ValueError, json.JSONDecodeError):
                     continue
-    results = _effective_results(_load_results(project_root, bot_id))
+    all_results = _effective_results(_load_results(project_root, bot_id))
+    current = [
+        row for row in all_results if row.get("triage_policy_version") == POLICY_VERSION
+    ]
+    results = [row for row in current if row.get("source") == source]
+    excluded_heuristic = sum(1 for row in current if row.get("source") == "heuristic")
     done_ids = {
         str(batch.get("batch_id")) for batch in batches if batch.get("status") == "done"
     }
@@ -825,6 +863,7 @@ def render_report(
     now = datetime.now(timezone.utc)
     latest = batches[-1].get("batch_id") if batches else "unknown"
     name = f"all-{latest}" if not only_batch else str(latest)
+    name = f"{name}.{source}"
     report_dir = _report_paths(definition, project_root)
     md_path = report_dir / f"{name}.md"
     panel_path = report_dir / f"{name}.panel.txt"
@@ -836,8 +875,10 @@ def render_report(
         "",
         f"- 生成时间：{now.isoformat()}",
         f"- 批次数：{len(batches)}",
-        f"- 结论数：{len(results)}",
+        f"- 结论数：{len(results)}（来源：{source}）",
     ]
+    if source == "agent" and excluded_heuristic:
+        md.append(f"- 启发式结论：{excluded_heuristic} 条，未混入本报告；请用 `--source heuristic` 单独渲染")
     if pending_batches:
         md.append(
             "- 待分诊批次："
@@ -887,38 +928,34 @@ def render_report(
         panel.extend(section)
         return True
 
-    shown_high: set[str] = set()
     if high_rows:
-        available = max(1, min(max_items, max_lines - 1 - len(panel) - 1))
-        shown = high_rows[:available]
-        high_lines = [_panel_line(result, meta) for result, meta in shown]
-        if add_section(f"高优先级（{len(high_rows)}）", high_lines, len(high_rows) - len(shown)):
-            shown_high = {str(result.get("triage_id")) for result, _ in shown}
-        else:
-            panel.append(f"高优先级（{len(high_rows)}）…见完整报告")
-            shown_high = set()
+        high_by_label: dict[str, int] = defaultdict(int)
+        for result, _meta in high_rows:
+            high_by_label[str(result.get("classification"))] += 1
+        parts = []
+        for classification, label in GROUP_ORDER:
+            count = high_by_label.get(classification, 0)
+            if count:
+                parts.append(f"{label} {count}")
+        panel.append("高优先级分布：" + "、".join(parts))
 
     skipped: list[str] = []
     for classification, label in GROUP_ORDER:
         rows = grouped.get(classification, [])
         if not rows:
             continue
-        remaining = [
-            (result, meta)
-            for result, meta in rows
-            if str(result.get("triage_id")) not in shown_high
-        ]
-        if not remaining:
-            skipped.append(f"{label} {len(rows)} 项均已置顶")
-            continue
-        lines = [_panel_line(result, meta) for result, meta in remaining]
-        high_note = len(rows) - len(remaining)
+        lines = [_panel_line(result, meta) for result, meta in rows]
+        high_note = sum(1 for result, _meta in rows if result.get("urgency") == "high")
         header = f"{label}（{len(rows)}）"
         if high_note:
-            header += f" 其中 {high_note} 项已置顶"
+            header += f" 其中 {high_note} 项标 [高]"
         if not add_section(header, lines, 0):
             skipped.append(f"{label} {len(rows)}")
 
+    if source == "agent" and excluded_heuristic:
+        note = f"启发式结果另 {excluded_heuristic} 条未混入（--source heuristic）"
+        if len(panel) + 2 <= max_lines:
+            panel.append(note)
     tail = f"完整报告：{md_path}"
     if skipped:
         tail = "…未显示：" + "、".join(skipped) + "；" + tail
@@ -1022,6 +1059,7 @@ def cmd_report(args: argparse.Namespace) -> int:
             args.bot_id,
             batch_ids,
             only_batch=bool(batch_ids),
+            source=args.source,
         )
     except TriageError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -1069,6 +1107,7 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--project-root", default=Path("."), type=Path)
     report.add_argument("--bot-id", required=True)
     report.add_argument("--batch-id", action="append", default=None)
+    report.add_argument("--source", choices=sorted(RESULT_SOURCES), default="agent")
     report.set_defaults(func=cmd_report)
     return parser
 

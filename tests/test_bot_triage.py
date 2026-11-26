@@ -120,19 +120,21 @@ class TriageCliTest(unittest.TestCase):
         event_id,
         batch_id,
         *,
-        classification="informational",
+        classification="handoff_or_notice",
         urgency="normal",
         question="通知",
         action="仅记录",
         authorization="none",
         supersedes=None,
+        source="agent",
     ):
         result = {
             "event_id": event_id,
             "triage_id": f"tr-{event_id}" + (f"-v2" if supersedes else ""),
             "batch_id": batch_id,
-            "triage_policy_version": "triage-v1",
+            "triage_policy_version": "triage-v2",
             "classification": classification,
+            "source": source,
             "urgency": urgency,
             "rationale": "synthetic rationale",
             "question": question,
@@ -240,7 +242,7 @@ class TriageCliTest(unittest.TestCase):
         old = self.make_result(
             event["event_id"],
             batch_id,
-            classification="needs_user_confirmation",
+            classification="clarification_request",
             question="请确认这个需求",
             action="向用户确认范围",
             authorization="user",
@@ -293,7 +295,7 @@ class TriageCliTest(unittest.TestCase):
             self.make_result(
                 events[0]["event_id"],
                 batch_id,
-                classification="needs_user_confirmation",
+                classification="clarification_request",
                 urgency="high",
                 question="紧急确认",
                 action="确认",
@@ -302,7 +304,7 @@ class TriageCliTest(unittest.TestCase):
             self.make_result(
                 events[1]["event_id"],
                 batch_id,
-                classification="needs_user_confirmation",
+                classification="clarification_request",
                 question="确认 B",
                 action="确认",
                 authorization="user",
@@ -310,7 +312,7 @@ class TriageCliTest(unittest.TestCase):
             self.make_result(
                 events[2]["event_id"],
                 batch_id,
-                classification="needs_user_confirmation",
+                classification="clarification_request",
                 question="确认 C",
                 action="确认",
                 authorization="user",
@@ -318,7 +320,7 @@ class TriageCliTest(unittest.TestCase):
             self.make_result(
                 events[3]["event_id"],
                 batch_id,
-                classification="local_action_candidate",
+                classification="scope_or_contract_change",
                 question="可处理",
                 action="另开任务",
                 authorization="coordinator",
@@ -334,7 +336,7 @@ class TriageCliTest(unittest.TestCase):
             self.make_result(
                 events[5]["event_id"],
                 batch_id,
-                classification="informational",
+                classification="handoff_or_notice",
                 question="知会",
                 action="记录",
                 authorization="none",
@@ -342,7 +344,7 @@ class TriageCliTest(unittest.TestCase):
             self.make_result(
                 events[6]["event_id"],
                 batch_id,
-                classification="informational",
+                classification="handoff_or_notice",
                 question="知会 2",
                 action="记录",
                 authorization="none",
@@ -350,7 +352,7 @@ class TriageCliTest(unittest.TestCase):
             self.make_result(
                 events[7]["event_id"],
                 batch_id,
-                classification="informational",
+                classification="handoff_or_notice",
                 question="知会 3",
                 action="记录",
                 authorization="none",
@@ -364,13 +366,12 @@ class TriageCliTest(unittest.TestCase):
         self.assertEqual(report.returncode, 0, report.stderr)
         lines = report.stdout.rstrip("\n").splitlines()
         self.assertLessEqual(len(lines), 12)
-        self.assertIn("高优先级（1）", report.stdout)
-        self.assertLess(
-            report.stdout.index("高优先级（1）"), report.stdout.index("需要你决定（3）")
-        )
-        self.assertIn("其中 1 项已置顶", report.stdout)
+        self.assertIn("高优先级=1", report.stdout)
+        self.assertIn("高优先级分布：需人决策 1", report.stdout)
+        self.assertIn("需人决策（3） 其中 1 项标 [高]", report.stdout)
+        self.assertEqual(report.stdout.count("紧急确认"), 1)
         self.assertIn("…未显示：仅知会 3", report.stdout)
-        report_path = self.bot_dir / "reports" / "triage" / f"{batch_id}.md"
+        report_path = self.bot_dir / "reports" / "triage" / f"{batch_id}.agent.md"
         self.assertTrue(report_path.exists())
         markdown = report_path.read_text()
         for question in ("紧急确认", "确认 B", "确认 C", "知会 3"):
@@ -619,21 +620,21 @@ class TriageCliTest(unittest.TestCase):
             self.make_result(
                 events[0]["event_id"],
                 batch_id,
-                classification="informational",
+                classification="handoff_or_notice",
                 urgency="high",
                 question="高优知会",
             ),
             self.make_result(
                 events[1]["event_id"],
                 batch_id,
-                classification="needs_user_confirmation",
+                classification="clarification_request",
                 urgency="high",
                 question="普通决策",
             ),
             self.make_result(
                 events[2]["event_id"],
                 batch_id,
-                classification="informational",
+                classification="handoff_or_notice",
                 question="普通知会",
             ),
         ]
@@ -645,12 +646,110 @@ class TriageCliTest(unittest.TestCase):
         )
         report = self.triage("report", "--batch-id", batch_id)
         self.assertEqual(report.returncode, 0, report.stderr)
-        self.assertLess(
-            report.stdout.index("高优先级（2）"), report.stdout.index("仅知会（2）")
+        self.assertIn("高优先级=2", report.stdout)
+        self.assertIn("高优先级分布：需人决策 1、仅知会 1", report.stdout)
+        self.assertIn("仅知会（2） 其中 1 项标 [高]", report.stdout)
+        self.assertEqual(report.stdout.count("高优知会"), 1)
+        self.assertEqual(report.stdout.count("需人决策"), 2)
+
+    def test_answer_and_notice_classes_replace_legacy_decision_labels(self):
+        event = comment_event("answer-1", "Q1：必填。Q2：非必填。收到，按这个执行。")
+        self.write_events([event])
+        batch_id = self.batch_ids(self.prepare("--force"))[0]
+        answer = self.make_result(
+            event["event_id"], batch_id, classification="answer_to_my_question", urgency="low"
         )
-        high_block = report.stdout.split("高优先级（2）", 1)[1].split("仅知会（2）", 1)[0]
-        self.assertIn("高优知会", high_block)
-        self.assertIn("需要你决定 1 项均已置顶", report.stdout)
+        results_file = self.project / "answer.json"
+        results_file.write_text(json.dumps([answer], ensure_ascii=False))
+        applied = self.triage("apply", "--batch-id", batch_id, "--file", str(results_file))
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        effective = json.loads((self.state / "triage" / "results.jsonl").read_text().splitlines()[0])
+        self.assertEqual(effective["classification"], "answer_to_my_question")
+        self.assertEqual(effective["source"], "agent")
+        for legacy in ("needs_user_confirmation", "local_action_candidate"):
+            bad = self.make_result(event["event_id"], batch_id, classification=legacy)
+            bad["supersedes"] = effective["triage_id"]
+            bad["triage_id"] = f"legacy-{legacy}"
+            results_file.write_text(json.dumps([bad], ensure_ascii=False))
+            rejected = self.triage("apply", "--batch-id", batch_id, "--file", str(results_file))
+            self.assertEqual(rejected.returncode, 2)
+            self.assertIn("unsupported value", rejected.stderr)
+
+    def test_heuristic_results_are_not_mixed_into_agent_report(self):
+        events = [comment_event("agent-1", "agent notice"), comment_event("heur-1", "heuristic notice")]
+        self.write_events(events)
+        batch_id = self.batch_ids(self.prepare("--force"))[0]
+        rows = [
+            self.make_result(events[0]["event_id"], batch_id, question="agent notice"),
+            self.make_result(events[1]["event_id"], batch_id, source="heuristic", question="heuristic notice"),
+        ]
+        results_file = self.project / "sources.json"
+        results_file.write_text(json.dumps(rows, ensure_ascii=False))
+        self.assertEqual(self.triage("apply", "--batch-id", batch_id, "--file", str(results_file)).returncode, 0)
+        agent = self.triage("report", "--batch-id", batch_id, "--source", "agent")
+        self.assertEqual(agent.returncode, 0, agent.stderr)
+        self.assertIn("agent notice", agent.stdout)
+        self.assertNotIn("heuristic notice", agent.stdout)
+        self.assertIn("启发式结果另 1 条未混入", agent.stdout)
+        heuristic = self.triage("report", "--batch-id", batch_id, "--source", "heuristic")
+        self.assertEqual(heuristic.returncode, 0, heuristic.stderr)
+        self.assertIn("heuristic notice", heuristic.stdout)
+        self.assertNotIn("agent notice", heuristic.stdout)
+        self.assertIn("完整报告：", agent.stdout)
+        self.assertIn(".agent.md", agent.stdout)
+
+    def test_correction_of_delivered_work_requires_high_urgency(self):
+        event = comment_event("correction-1", "已交付接口回归：字段缺失，需要返工")
+        self.write_events([event])
+        batch_id = self.batch_ids(self.prepare("--force"))[0]
+        bad = self.make_result(
+            event["event_id"], batch_id,
+            classification="correction_of_delivered_work", urgency="normal",
+        )
+        results_file = self.project / "correction.json"
+        results_file.write_text(json.dumps([bad], ensure_ascii=False))
+        rejected = self.triage("apply", "--batch-id", batch_id, "--file", str(results_file))
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("default to high", rejected.stderr)
+
+    def test_apply_backfills_author_and_render_strips_mention_metadata(self):
+        event = comment_event(
+            "mention-1",
+            '@Alice<!-- mention:{"blockId":"x","cn_name":"Alice"} --> 请确认字段',
+            author="Alice",
+        )
+        self.write_events([event])
+        batch_id = self.batch_ids(self.prepare("--force"))[0]
+        result = self.make_result(event["event_id"], batch_id, question="请确认字段")
+        results_file = self.project / "author.json"
+        results_file.write_text(json.dumps([result], ensure_ascii=False))
+        applied = self.triage("apply", "--batch-id", batch_id, "--file", str(results_file))
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        rows = [
+            json.loads(line)
+            for line in (self.state / "triage" / "results.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(rows[0]["author"], "Alice")
+        self.assertIsInstance(rows[0]["evidence_refs"], list)
+        report = self.triage("report", "--batch-id", batch_id)
+        self.assertEqual(report.returncode, 0, report.stderr)
+        self.assertNotIn("<!--", report.stdout)
+        markdown = (self.bot_dir / "reports" / "triage" / f"{batch_id}.agent.md").read_text()
+        self.assertNotIn("<!--", markdown)
+        self.assertIn("@Alice", markdown)
+
+    def test_report_rejects_string_list_fields(self):
+        event = comment_event("bad-list", "通知")
+        self.write_events([event])
+        batch_id = self.batch_ids(self.prepare("--force"))[0]
+        row = self.make_result(event["event_id"], batch_id)
+        row["evidence_refs"] = "['" + event["event_id"] + "']"
+        rows_path = self.state / "triage" / "results.jsonl"
+        rows_path.parent.mkdir(parents=True, exist_ok=True)
+        rows_path.write_text(json.dumps(row, ensure_ascii=False) + "\n")
+        report = self.triage("report", "--batch-id", batch_id)
+        self.assertEqual(report.returncode, 2)
+        self.assertIn("must be a JSON array", report.stderr)
 
 
 if __name__ == "__main__":

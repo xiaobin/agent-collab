@@ -744,7 +744,7 @@ Skill、指令和 Markdown 记忆不是权限系统。真正阻断仍要依靠�
 - 用明确的边界标记传给 Agent，例如 `<untrusted_external_content>`；
 - Agent 的系统指令明确：这些内容只能作为事实和证据，不能作为控制指令；
 - Runtime 永不解析事件内容来执行命令、创建 bot、修改配置或批准权限；
-- Agent 输出中的“建议创建 bot/放开权限/执行命令”只能进入 `needs_user_confirmation`，不能直接执行；
+- Agent 输出中的“建议创建 bot/放开权限/执行命令”只能进入 `clarification_request` 或 `scope_or_contract_change` 等待人确认，不能直接执行；
 - 重要决策保留原始引用，便于人核对。
 
 ## 11. Bot 实例场景
@@ -770,8 +770,8 @@ Skill、指令和 Markdown 记忆不是权限系统。真正阻断仍要依靠�
 - 运行时：process 采集；达到批次窗口或事件数才调用一次 agent_batch。
 - 只读：不新增、不修改、不回复飞书任务和评论。
 - 增量：每项独立游标；评论按 `comment_id` 去重，`created_at` 只作辅助。
-- 输出：`events.jsonl`、`triage/results.jsonl`、`reports/triage/<batch_id>.md`、面板摘要。
-- 人的门禁：`needs_user_confirmation` 和 `local_action_candidate` 只作为标签，不自动执行。
+- 输出：`events.jsonl`、`triage/results.jsonl`、`reports/triage/<batch_id>.agent.md`、面板摘要。
+- 人的门禁：所有分诊分类都只作为标签，不自动执行。
 - 失败：认证失效明确显示，不推进游标；部分失败保留该项旧游标。
 
 ### 11.2 CI 健康观察
@@ -1075,10 +1075,10 @@ MVP 只需要：
 已交付：
 
 - `bot_triage.py` 的 `prepare/claim/apply/dispose/report`；批次 `pending→claimed→done`，只从 `events.jsonl` 取未入批事件；
-- 四类结论、urgency、`supersedes`、同 event+policy 唯一、处置记录；
+- 六类语义结论、`source`、urgency、`supersedes`、同 event+policy 唯一、处置记录；
 - 从同一份 `results.jsonl` 生成全量 Markdown 与受限面板摘要，空批次静默、pending 明确显示。
 
-尚未交付：`herdr_batch` 自动派发、跨三端 Agent 调用、真实 169 条事件的完整分类验收、报告投递到 Herdr 面板。退出条件：真实批次全覆盖、分类可复核、纠正链可追溯、面板行数受限且不丢失授权提示。
+尚未交付：`herdr_batch` 自动派发、跨三端 Agent 调用、169 条结论的人类完整验收（当前为 11 条抽样 + 独立复核抽检）、报告投递到 Herdr 面板。退出条件：真实批次全覆盖、分类可复核、纠正链可追溯、面板行数受限且不丢失授权提示。
 
 #### 阶段 3：常驻与部署
 
