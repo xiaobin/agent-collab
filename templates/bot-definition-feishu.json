@@ -2,6 +2,7 @@
   "schema_version": 1,
   "bot_id": "feishu-sync",
   "revision": 1,
+  "run_mode": "once",
   "goal_ref": "REPLACE-WITH-GOAL-REF",
   "display_name": "Feishu work-item sync (read-only)",
   "description": "Pull the owner's Feishu work-item todos, details and comments into local .herdr state once per day. No writes to Feishu, no dispatch to other agents.",

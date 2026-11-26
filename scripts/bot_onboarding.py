@@ -28,6 +28,10 @@ OWNER_FILE = ".herdr/bot-owner.json"
 BOT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 NEEDS_HUMAN = 3
 CONFLICT = 4
+RUN_MODES = {"once", "resident"}
+DEFAULT_INTERVAL_MINUTES = 1440
+MAX_INTERVAL_MINUTES = 43200  # 30 days; anything larger is almost certainly a typo
+RESIDENT_CONFIRM = "现在就让它在后台常驻吗？"
 
 
 class OnboardingError(Exception):
@@ -111,7 +115,68 @@ def _select_project_key(probes: dict[str, Any], requested: str | None) -> str:
     )
 
 
-def _render_definition(template: str, replacements: dict[str, str], bot_id: str, interval_seconds: int) -> dict[str, Any]:
+def _interval_seconds(interval_minutes: int) -> int:
+    if interval_minutes < 1:
+        raise OnboardingError(
+            "interval must be a positive whole number of minutes (>= 1); ask the user to correct it",
+            2,
+        )
+    if interval_minutes > MAX_INTERVAL_MINUTES:
+        raise OnboardingError(
+            f"interval must be <= {MAX_INTERVAL_MINUTES} minutes (30 days); check for a typo",
+            2,
+        )
+    return interval_minutes * 60
+
+
+def _next_revision(project_root: Path, bot_id: str) -> tuple[int, int | None]:
+    """Re-onboarding bumps the revision so the previous approval stops matching."""
+    path = project_root / ".herdr" / "bots" / bot_id / "definition.json"
+    if not path.is_file():
+        return 1, None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OnboardingError(
+            f"existing definition {path} is not readable JSON ({exc}); inspect it with the user first",
+            CONFLICT,
+        ) from exc
+    previous = payload.get("revision") if isinstance(payload, dict) else None
+    if not isinstance(previous, int) or isinstance(previous, bool) or previous < 1:
+        raise OnboardingError(
+            f"existing definition {path} has no usable revision; inspect it with the user first",
+            CONFLICT,
+        )
+    return previous + 1, previous
+
+
+def _run_plan(project_root: Path, bot_id: str, run_mode: str, interval_seconds: int) -> dict[str, Any]:
+    bot = str(Path(__file__).resolve().parent / "bot.py")
+    base = ["python3", bot, "run", "--project-root", str(project_root), "--bot-id", bot_id]
+    resident = run_mode == "resident"
+    stop = ["python3", bot, "stop", "--project-root", str(project_root), "--bot-id", bot_id]
+    status = ["python3", bot, "status", "--project-root", str(project_root), "--bot-id", bot_id]
+    return {
+        "mode": run_mode,
+        "command": base + (["--resident", "--interval-seconds", str(interval_seconds)] if resident else ["--once"]),
+        "background": resident,
+        "confirm_before_start": resident,
+        "confirm_prompt": RESIDENT_CONFIRM if resident else None,
+        "pid_file": f".herdr/bots/{bot_id}/state/resident.pid" if resident else None,
+        "log_file": f".herdr/bots/{bot_id}/logs/resident.log" if resident else None,
+        "stop_command": stop,
+        "status_command": status,
+    }
+
+
+def _render_definition(
+    template: str,
+    replacements: dict[str, str],
+    bot_id: str,
+    interval_seconds: int,
+    run_mode: str,
+    revision: int,
+) -> dict[str, Any]:
     text = template
     for token, value in replacements.items():
         text = text.replace(token, value)
@@ -120,6 +185,8 @@ def _render_definition(template: str, replacements: dict[str, str], bot_id: str,
     if "REPLACE-WITH-" in text or "replace-me" in text:
         raise OnboardingError("definition template still contains an unfilled placeholder", 2)
     definition = json.loads(text)
+    definition["revision"] = revision
+    definition["run_mode"] = run_mode
     for trigger in definition["triggers"]:
         if trigger.get("type") == "interval":
             trigger["interval_seconds"] = interval_seconds
@@ -135,8 +202,16 @@ def cmd_plan(args: argparse.Namespace) -> int:
         raise OnboardingError(f"invalid bot id: {args.bot_id}", 2)
     if not args.goal_ref.strip():
         raise OnboardingError("goal_ref is required; take it from the task card or the user's instruction", 2)
-    if args.interval_seconds < 60:
-        raise OnboardingError("interval must be >= 60 seconds", 2)
+    if args.run_mode is None:
+        raise OnboardingError(
+            "run mode is required: ask the user to choose resident (long-lived) or once (exits after one pass), "
+            "then pass --run-mode",
+            NEEDS_HUMAN,
+        )
+    if args.run_mode not in RUN_MODES:
+        raise OnboardingError(f"run mode must be one of {sorted(RUN_MODES)}", 2)
+    interval_seconds = _interval_seconds(args.interval_minutes)
+    revision, previous_revision = _next_revision(project_root, args.bot_id)
 
     owner_ref = _load_owner(project_root)
     probes = _probe(args.meegle_bin)
@@ -151,7 +226,9 @@ def cmd_plan(args: argparse.Namespace) -> int:
             "REPLACE-WITH-PROJECT-ROOT": str(project_root),
         },
         args.bot_id,
-        args.interval_seconds,
+        interval_seconds,
+        args.run_mode,
+        revision,
     )
     adapter_config = {
         "project_key": project_key,
@@ -176,18 +253,39 @@ def cmd_plan(args: argparse.Namespace) -> int:
         "owner_ref": owner_ref,
         "project_key": project_key,
         "expected_user_key": probes["user_key"],
-        "interval_seconds": args.interval_seconds,
+        "interval_minutes": args.interval_minutes,
+        "interval_seconds": interval_seconds,
+        "run_mode": args.run_mode,
+        "revision": revision,
+        "previous_revision": previous_revision,
+        "run": _run_plan(project_root, args.bot_id, args.run_mode, interval_seconds),
         "files": files,
         "probes": {"user_key": probes["user_key"], "project_key_candidates": probes["project_keys"]},
-        "approve": {"approver_ref": owner_ref, "definition": f".herdr/bots/{args.bot_id}/definition.json"},
+        "approve": {
+            "approver_ref": owner_ref,
+            "definition": f".herdr/bots/{args.bot_id}/definition.json",
+            "revision": revision,
+        },
         "summary": [
             "数据来源：飞书项目待办、工作项详情与评论；只读（auth status / user me / user search / mywork todo / workitem get / comment list），不做任何飞书写操作",
             f"空间：{project_key}",
             f"当前身份：{probes['user_key']}（来自 meegle user me，批准与运行必须一致）",
-            f"频率：每 {args.interval_seconds} 秒一次，另支持手动触发",
+            f"频率：每 {args.interval_minutes} 分钟（{interval_seconds} 秒）一次，另支持手动触发",
+            (
+                "运行方式：常驻（run --resident），批准后常开；启动前会再问你一次「"
+                + RESIDENT_CONFIRM
+                + "」"
+                if args.run_mode == "resident"
+                else "运行方式：单次（run --once），本次拉完就退出，下次需要你再次触发"
+            ),
             f"写范围：.herdr/bot-policy.json 与 .herdr/bots/{args.bot_id}/**，不碰业务代码",
             f"落盘：definition.json / adapter-config.json / state/events.jsonl / reports/triage/（均在 .herdr/bots/{args.bot_id}/ 下）",
             f"批准：approver_ref={owner_ref}，必须等你的一句明确确认；配置漂移后需重新批准",
+            (
+                f"版本：revision {revision}（上一版 revision {previous_revision} 的批准已失效，必须重新批准）"
+                if previous_revision
+                else f"版本：revision {revision}"
+            ),
         ]
         + [f"sha256 {item['path']}: {item['sha256']}" for item in files],
     }
@@ -200,6 +298,23 @@ def cmd_plan(args: argparse.Namespace) -> int:
         output.write_text(rendered + "\n", encoding="utf-8")
     print(rendered)
     return 0
+
+
+def _is_newer_revision(existing: str, incoming: str) -> bool:
+    """Only a bump of the same bot's revision may overwrite the definition file."""
+    try:
+        old = json.loads(existing)
+        new = json.loads(incoming)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return False
+    if old.get("bot_id") != new.get("bot_id"):
+        return False
+    before, after = old.get("revision"), new.get("revision")
+    if not isinstance(before, int) or not isinstance(after, int):
+        return False
+    return after > before
 
 
 def cmd_write(args: argparse.Namespace) -> int:
@@ -215,6 +330,7 @@ def cmd_write(args: argparse.Namespace) -> int:
     if Path(plan.get("project_root", "")).resolve() != project_root:
         raise OnboardingError("plan was rendered for a different project root; re-run plan here", CONFLICT)
 
+    definition_path = f".herdr/bots/{plan.get('bot_id')}/definition.json"
     written, unchanged = [], []
     for item in plan["files"]:
         content = item["content"]
@@ -224,8 +340,13 @@ def cmd_write(args: argparse.Namespace) -> int:
         if project_root not in target.parents:
             raise OnboardingError(f"plan path escapes the project root: {item['path']}", CONFLICT)
         if target.exists():
-            if target.read_text(encoding="utf-8") == content:
+            existing = target.read_text(encoding="utf-8")
+            if existing == content:
                 unchanged.append(item["path"])
+                continue
+            if item["path"] == definition_path and _is_newer_revision(existing, content):
+                target.write_text(content, encoding="utf-8")
+                written.append(item["path"])
                 continue
             raise OnboardingError(
                 f"refusing to overwrite {item['path']}: existing content differs from the approved plan; "
@@ -247,7 +368,18 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--bot-id", default="feishu-sync")
     plan.add_argument("--goal-ref", required=True)
     plan.add_argument("--project-key", default=None)
-    plan.add_argument("--interval-seconds", type=int, default=86400)
+    plan.add_argument(
+        "--interval-minutes",
+        type=int,
+        default=DEFAULT_INTERVAL_MINUTES,
+        help="poll interval in whole minutes (default 1440 = daily)",
+    )
+    plan.add_argument(
+        "--run-mode",
+        choices=sorted(RUN_MODES),
+        default=None,
+        help="resident (long-lived process) or once (run one pass and exit); ask the user",
+    )
     plan.add_argument("--meegle-bin", default=os.environ.get("MEEGLE_BIN"))
     plan.add_argument("--output", default=None, help="optional path for the plan JSON")
     plan.set_defaults(handler=cmd_plan)

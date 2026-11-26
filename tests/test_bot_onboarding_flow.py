@@ -56,10 +56,11 @@ class OnboardingFlowTest(unittest.TestCase):
     def bot(self, *args):
         return self.cli(BOT, *args)
 
-    def onboard(self):
+    def onboard(self, *extra):
         plan_path = self.project / ".herdr" / "bots" / "feishu-sync" / "onboarding-plan.json"
         planned = self.cli(
             ONBOARDING, "plan", "--project-root", ".", "--goal-ref", "goal:flow",
+            "--run-mode", "once", *extra,
             "--output", str(plan_path),
         )
         self.assertEqual(planned.returncode, 0, planned.stderr)
@@ -113,6 +114,39 @@ class OnboardingFlowTest(unittest.TestCase):
         )
         result = self.bot("run", "--once", "--project-root", ".", "--bot-id", "feishu-sync")
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+
+
+    def test_reonboarding_bumps_revision_and_needs_a_new_approval(self):
+        self.onboard()
+        self.assertEqual(self.approve().returncode, 0)
+        plan_path = self.project / ".herdr" / "bots" / "feishu-sync" / "onboarding-plan.json"
+        replanned = self.cli(
+            ONBOARDING, "plan", "--project-root", ".", "--goal-ref", "goal:flow",
+            "--run-mode", "once", "--interval-minutes", "60", "--output", str(plan_path),
+        )
+        self.assertEqual(replanned.returncode, 0, replanned.stderr)
+        second = json.loads(replanned.stdout)
+        self.assertEqual(second["revision"], 2)
+        written = self.cli(ONBOARDING, "write", "--project-root", ".", "--plan-file", str(plan_path))
+        self.assertEqual(written.returncode, 0, written.stderr)
+
+        definition = json.loads(self.definition.read_text())
+        self.assertEqual(definition["revision"], 2)
+        self.assertEqual(definition["run_mode"], "once")
+        self.assertEqual(definition["triage"]["batch_interval_seconds"], 3600)
+
+        blocked = self.bot("run", "--once", "--project-root", ".", "--bot-id", "feishu-sync")
+        self.assertEqual(blocked.returncode, 3, blocked.stdout + blocked.stderr)
+        self.assertIn("approval", (blocked.stdout + blocked.stderr).lower())
+
+        reapproved = self.bot(
+            "approve", "--definition", str(self.definition), "--project-root", ".",
+            "--approval-id", "apr-flow-2",
+            "--approver-ref", "owner:alice", "--source-ref", "user-message:approved-again",
+        )
+        self.assertEqual(reapproved.returncode, 0, reapproved.stderr)
+        status = self.bot("status", "--project-root", ".", "--bot-id", "feishu-sync")
+        self.assertEqual(json.loads(status.stdout)["state"], "uninitialized")
 
 
 class FakeAdapterFlowTest(unittest.TestCase):

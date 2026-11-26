@@ -66,9 +66,10 @@ class OnboardingScriptTest(unittest.TestCase):
             check=False,
         )
 
-    def plan(self, *extra, env=None):
+    def plan(self, *extra, env=None, run_mode="once"):
+        mode = () if "--run-mode" in extra else ("--run-mode", run_mode)
         return self.run_cli(
-            "plan", "--project-root", ".", "--goal-ref", "goal:test", *extra, env=env
+            "plan", "--project-root", ".", "--goal-ref", "goal:test", *mode, *extra, env=env
         )
 
     def test_missing_owner_stops_and_asks_a_human(self):
@@ -150,6 +151,94 @@ class OnboardingScriptTest(unittest.TestCase):
         third = self.run_cli("write", "--project-root", ".", "--plan-file", str(plan_path))
         self.assertEqual(third.returncode, 4)
         self.assertIn("refusing to overwrite", third.stderr)
+
+    def test_interval_minutes_convert_to_seconds(self):
+        self.register_owner()
+        result = self.plan("--interval-minutes", "30")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan["interval_minutes"], 30)
+        self.assertEqual(plan["interval_seconds"], 1800)
+        definition = json.loads(plan["files"][1]["content"])
+        interval = [t for t in definition["triggers"] if t["type"] == "interval"][0]
+        self.assertEqual(interval["interval_seconds"], 1800)
+        self.assertEqual(definition["triage"]["batch_interval_seconds"], 1800)
+
+    def test_default_interval_is_one_day(self):
+        self.register_owner()
+        result = self.plan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan["interval_minutes"], 1440)
+        self.assertEqual(plan["interval_seconds"], 86400)
+
+    def test_invalid_interval_is_rejected(self):
+        self.register_owner()
+        for bad in ("0", "-5", "abc", "43201"):
+            with self.subTest(bad=bad):
+                result = self.plan("--interval-minutes", bad)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertFalse((self.project / ".herdr" / "bot-policy.json").exists())
+
+    def test_run_mode_is_required(self):
+        self.register_owner()
+        result = self.run_cli(
+            "plan", "--project-root", ".", "--goal-ref", "goal:test", "--interval-minutes", "1440"
+        )
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn("run mode is required", result.stderr)
+
+    def test_run_mode_selects_the_start_command(self):
+        self.register_owner()
+        once = json.loads(self.plan(run_mode="once").stdout)["run"]
+        self.assertEqual(once["mode"], "once")
+        self.assertEqual(once["command"][-1], "--once")
+        self.assertNotIn("--resident", once["command"])
+        self.assertFalse(once["confirm_before_start"])
+        self.assertFalse(once["background"])
+        self.assertIsNone(once["pid_file"])
+
+        resident = json.loads(
+            self.plan("--interval-minutes", "30", run_mode="resident").stdout
+        )["run"]
+        self.assertEqual(resident["mode"], "resident")
+        self.assertIn("--resident", resident["command"])
+        self.assertEqual(resident["command"][-1], "1800")
+        self.assertTrue(resident["confirm_before_start"])
+        self.assertTrue(resident["background"])
+        self.assertIn("常驻", resident["confirm_prompt"])
+        self.assertEqual(resident["pid_file"], ".herdr/bots/feishu-sync/state/resident.pid")
+        self.assertEqual(resident["log_file"], ".herdr/bots/feishu-sync/logs/resident.log")
+        self.assertIn("stop", resident["stop_command"])
+        self.assertIn("status", resident["status_command"])
+
+    def test_replan_bumps_revision_and_write_accepts_it(self):
+        self.register_owner()
+        plan_path = self.project / ".herdr" / "plan-1.json"
+        self.assertEqual(self.plan("--output", str(plan_path)).returncode, 0)
+        self.assertEqual(self.run_cli("write", "--project-root", ".", "--plan-file", str(plan_path)).returncode, 0)
+        definition = self.project / ".herdr" / "bots" / "feishu-sync" / "definition.json"
+        self.assertEqual(json.loads(definition.read_text())["revision"], 1)
+
+        plan_path_2 = self.project / ".herdr" / "plan-2.json"
+        replanned = self.plan("--interval-minutes", "60", "--output", str(plan_path_2))
+        self.assertEqual(replanned.returncode, 0, replanned.stderr)
+        second = json.loads(replanned.stdout)
+        self.assertEqual(second["revision"], 2)
+        self.assertEqual(second["previous_revision"], 1)
+        self.assertTrue(any("批准已失效" in line for line in second["summary"]))
+        written = self.run_cli("write", "--project-root", ".", "--plan-file", str(plan_path_2))
+        self.assertEqual(written.returncode, 0, written.stderr)
+        updated = json.loads(definition.read_text())
+        self.assertEqual(updated["revision"], 2)
+        self.assertEqual(updated["run_mode"], "once")
+        self.assertEqual(updated["triage"]["batch_interval_seconds"], 3600)
+        validated = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "bot.py"), "validate",
+             "--definition", str(definition), "--project-root", "."],
+            cwd=self.project, env=self.env, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(validated.returncode, 0, validated.stdout + validated.stderr)
 
     def test_tampered_plan_is_rejected(self):
         self.register_owner()

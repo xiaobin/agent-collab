@@ -51,6 +51,13 @@ DEFINITION_KEYS = {
     "health",
     "escalation",
 }
+DEFINITION_OPTIONAL_KEYS = {
+    # How the operator wants this bot to run: a long-lived --resident process,
+    # or one --once pass that exits. Recorded in the definition so the choice
+    # is covered by the approval snapshot.
+    "run_mode",
+}
+RUN_MODES = {"once", "resident"}
 POLICY_KEYS = {
     "schema_version",
     "allowed_adapters",
@@ -707,7 +714,7 @@ def validate_definition(
         return result
     result.definition = definition
 
-    _check_keys(definition, DEFINITION_KEYS, "", result)
+    _check_keys(definition, DEFINITION_KEYS | DEFINITION_OPTIONAL_KEYS, "", result)
     if not _require(
         definition,
         [
@@ -745,6 +752,8 @@ def validate_definition(
     _string(definition, "goal_ref", "", result)
     _string(definition, "display_name", "", result)
     _string(definition, "description", "", result)
+    if "run_mode" in definition and definition["run_mode"] not in RUN_MODES:
+        result.errors.append("run_mode: must be once or resident")
 
     if "identity" in definition:
         _validate_identity(definition["identity"], result)
