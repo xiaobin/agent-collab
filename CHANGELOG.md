@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.12] - 2026-11-26
+
+### Added
+
+- `bot-onboarding` 现在必问两项并由用户决定：轮询频率（分钟，默认 1440，上限 43200）与运行方式（`resident` 常驻 / `once` 单次）。频率换算为 `interval_seconds` 同时写入 trigger 与 `triage.batch_interval_seconds`。
+- 常驻模式在启动前再确认一次，输出 PID 文件、日志路径与 stop/status 命令；单次模式明确提示「本次拉完就退出」。
+- definition 写入 revision 自动 +1，旧批准失效；`write` 仅允许同 bot_id 且更高 revision 覆盖。
+
 ## [0.4.11] - 2026-11-26
 
 ### Added
