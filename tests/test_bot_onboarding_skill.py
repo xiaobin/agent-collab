@@ -50,6 +50,31 @@ class BotOnboardingSkillTest(unittest.TestCase):
         # A stopped login or a changed definition must never be auto-approved.
         self.assertIn("approval_invalidated", commands)
 
+    def test_skill_asks_frequency_and_run_mode_before_starting(self):
+        text = SKILL.read_text(encoding="utf-8")
+        for token in (
+            "--interval-minutes",
+            "--run-mode",
+            "1440",
+            "AskUserQuestion",
+            "现在就让它在后台常驻吗？",
+            "run --once",
+            "run --resident",
+            "再次触发",
+            "bot.py stop",
+        ):
+            self.assertIn(token, text)
+        commands = (SKILL_DIR / "references" / "commands.md").read_text(encoding="utf-8")
+        for token in (
+            "--interval-minutes",
+            "--run-mode",
+            "现在就让它在后台常驻吗？",
+            "resident.pid",
+            "resident.log",
+            "run.stop_command",
+        ):
+            self.assertIn(token, commands)
+
     def test_readme_shows_only_the_agent_entry(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         start = readme.index("### 最小试用")

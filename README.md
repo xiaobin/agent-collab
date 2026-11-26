@@ -36,12 +36,15 @@
 - Pi：`/skill:bot-onboarding`
 - Codex：`$agent-collab:bot-onboarding`
 
-agent 会在你的项目里完成探测、生成配置、校验和首次只读运行，你只需要在两类事情上回一句：
+agent 会在你的项目里完成探测、生成配置、校验和首次只读运行，只在下面几处找你确认：
 
-1. **确认批准**：agent 先给你数据来源、空间、身份、频率、写范围、落盘位置和配置哈希；你看完回一句「批准」。没有这句话，它不会启动。
-2. **飞书登录**：meegle 未登录时 agent 会停下，请你自己登录一次；令牌不经过 agent，也不写进任何配置文件。
+1. **owner 标识**（首次）：登记到项目 `.herdr/bot-owner.json`，作为批准人记录；它不会拿 git email 或系统用户名顶替。
+2. **多久拉一次**：单位分钟，你可以自己填，默认 `1440`（约一天）。间隔越短拉得越勤，占用飞书配额越多、批次越碎；必须是正整数。
+3. **常驻还是单次**：**常驻**＝批准后开一个长期后台进程，随时可以让它停；**单次**＝本次拉完就退出，下次需要你再次触发。选常驻时，真正启动前 agent 还会再问一次「现在就让它在后台常驻吗？」。
+4. **确认批准**：agent 给你数据来源、空间、身份、频率、运行方式、写范围、落盘位置和配置哈希，你看完回一句「批准」。没有这句话，它不会启动。
+5. **飞书登录**：meegle 未登录时 agent 会停下，请你自己登录一次；令牌不经过 agent，也不写进任何配置文件。
 
-第一次接入时，agent 还会问一次你的 owner 标识，登记到项目 `.herdr/bot-owner.json`，作为批准人记录；它不会拿 git email 或系统用户名顶替。
+频率和运行方式都会写进配置并计入批准哈希：改其中任何一项，都会生成新版本，旧批准立即失效，需要你重新确认一次。
 
 **它做什么**：只读拉取你本人的飞书待办、详情和评论，写进项目 `.herdr/bots/feishu-sync/`；不评论、不改状态、不建单，也不向其他 agent 派单。
 
@@ -49,6 +52,7 @@ agent 会在你的项目里完成探测、生成配置、校验和首次只读�
 
 - 报告：`.herdr/bots/feishu-sync/reports/triage/` 下的 `*.agent.md` 是人读报告，同名 `.agent.panel.txt` 是面板摘要。报告要等这一批事件由 agent 判断完才生成；采集本身只把原始事件写进 `.herdr/bots/feishu-sync/state/events.jsonl`。
 - 状态：直接问 agent，或让它把 `state`（第一次是 `uninitialized`，正常跑过是 `ok`，被停或认证失效是 `paused`）、`last_success_at`、`last_error` 念给你。
+- 常驻进程：agent 会记录 PID（`.herdr/bots/feishu-sync/state/resident.pid`）和日志（`.herdr/bots/feishu-sync/logs/resident.log`），并告诉你怎么停（`bot.py stop`）、怎么查（`bot.py status`）。
 
 **边界**：只读飞书、只写项目本地 `.herdr/`、失败原样报出；`--resident` 单实例锁基于本地文件系统，NFS 挂载未验证；token 失效需人工重新登录；配置一改，旧批准立即失效，必须重新确认。
 
@@ -73,7 +77,8 @@ agent 会在你的项目里完成探测、生成配置、校验和首次只读�
 
 ```bash
 python3 "$AC/scripts/bot_onboarding.py" plan  --project-root . --bot-id <bot-id> --goal-ref <goal-ref> \
-  [--project-key <project-key>] --output .herdr/bots/<bot-id>/onboarding-plan.json
+  [--project-key <project-key>] --interval-minutes <分钟> --run-mode <resident|once> \
+  --output .herdr/bots/<bot-id>/onboarding-plan.json
 python3 "$AC/scripts/bot_onboarding.py" write --project-root . --plan-file .herdr/bots/<bot-id>/onboarding-plan.json
 python3 "$AC/scripts/bot.py" validate --definition .herdr/bots/<bot-id>/definition.json
 python3 "$AC/scripts/bot.py" explain  --definition .herdr/bots/<bot-id>/definition.json

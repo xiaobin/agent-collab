@@ -23,9 +23,13 @@ meegle mywork todo --action todo   # 收集 project_key；多个空间时列出�
 ```bash
 python3 "<plugin>/scripts/bot_onboarding.py" plan \
   --project-root . --bot-id feishu-sync --goal-ref <GOAL_REF> \
-  [--project-key <KEY>] [--interval-seconds 86400] \
+  [--project-key <KEY>] --interval-minutes <分钟> --run-mode <resident|once> \
   --output .herdr/bots/feishu-sync/onboarding-plan.json
 ```
+
+`--interval-minutes` 是用户自己填的正整数分钟，默认 `1440`（约一天）；plan 换算为 `interval_seconds = 分钟×60`，写入 `triggers[interval].interval_seconds` 与 `triage.batch_interval_seconds`。`0`、负数、非整数或超过 `43200`（30 天）→ 退出码 `2`。
+
+`--run-mode` 必填：`resident`（`run --resident`，长期进程）或 `once`（`run --once`，跑一轮退出）。不传 → 退出码 `3`，提示先问用户。两项都会写进 definition 并进入批准哈希。
 
 模板来源：`templates/bot-definition-feishu.json`、`templates/bot-policy-feishu.json`、`templates/adapter-config.example.json`。plan 会替换全部 `REPLACE-WITH-*` 占位符（goal_ref、owner_ref、workspace_label、cwd_marker、project_key、expected_user_key），并输出 JSON：
 
@@ -33,8 +37,12 @@ python3 "<plugin>/scripts/bot_onboarding.py" plan \
 | --- | --- |
 | `files[]` | `path`（相对项目根）、`content`、`sha256` |
 | `summary[]` | 给用户看的人话摘要：数据来源、空间、身份、频率、写范围、落盘路径 |
-| `approve` | `approver_ref`（= 登记的 owner_ref）、`definition` 路径 |
+| `approve` | `approver_ref`（= 登记的 owner_ref）、`definition` 路径、`revision` |
 | `probes` | 探测事实：meegle 身份、候选空间、owner 来源 |
+| `interval_minutes` / `interval_seconds` | 用户填的分钟与换算后的秒 |
+| `run_mode` | `resident` 或 `once`，同时写进 definition 的 `run_mode` |
+| `revision` / `previous_revision` | 当前 revision 与上一版（首次为 `null`）；重新接入自动 +1 |
+| `run` | `mode`、`command`、`background`、`confirm_before_start`、`confirm_prompt`、`pid_file`、`log_file`、`stop_command`、`status_command` |
 
 退出码：`0` 成功；`2` 探测失败或空间不唯一（stderr 带候选列表）；`3` 需要人处理（owner 缺失、未登录）。plan 只写 `--output` 指定的计划文件，不写 definition/policy/adapter-config。
 
@@ -64,11 +72,34 @@ python3 "<plugin>/scripts/bot.py" approve \
 
 `--approver-ref` 必须等于 `.herdr/bot-owner.json` 的 `owner_ref`；`--source-ref` 必须能回溯到用户那句确认（面板消息引用、任务卡条目或 Issue 评论）。没有确认消息就不要执行本步。重复批准同一 revision 会报 `already approved; increase revision`，属于正常防护，不要靠改 revision 绕过讨论。
 
-## 4. 首次只读运行与结果
+## 4. 运行与结果（按用户选的模式）
+
+单次：
 
 ```bash
 python3 "<plugin>/scripts/bot.py" run --once --project-root . --bot-id feishu-sync
+```
+
+常驻（先拿到用户第二次确认「现在就让它在后台常驻吗？」再启动）：
+
+```bash
+python3 "<plugin>/scripts/bot.py" run --resident --interval-seconds <N> --project-root . --bot-id feishu-sync \
+  >> .herdr/bots/feishu-sync/logs/resident.log 2>&1 &
+echo $! > .herdr/bots/feishu-sync/state/resident.pid
+```
+
+启动后把 PID 文件与日志路径告诉用户，并给出停止/查询方式（即 plan 的 `run.stop_command` / `run.status_command`）：
+
+```bash
+python3 "<plugin>/scripts/bot.py" stop   --project-root . --bot-id feishu-sync
 python3 "<plugin>/scripts/bot.py" status --project-root . --bot-id feishu-sync
+```
+
+单次模式要向用户说明：本次拉完就退出，下次需要再次触发；常驻模式被 stop 或中断后要用 `bot.py resume` 重新拉起，不要直接再 `run`。
+
+分诊批次与报告：
+
+```bash
 python3 "<plugin>/scripts/bot.py" triage prepare --project-root . --bot-id feishu-sync [--force]
 python3 "<plugin>/scripts/bot.py" triage report --project-root . --bot-id feishu-sync
 ```
@@ -88,6 +119,9 @@ python3 "<plugin>/scripts/bot.py" triage report --project-root . --bot-id feishu
 | meegle 未登录或 token 失效 | 停下请用户登录；不要代跑交互式登录，不要重试轰炸 |
 | `adapter identity mismatch`（退出码 6） | 当前 meegle 身份与 `expected_user_key` 不符，报给用户，不要改成别人身份继续 |
 | 空间不唯一 | 列出候选 `project_key` 让用户选，不猜 |
+| plan 报 `run mode is required`（退出码 3） | 还没问用户常驻还是单次，先问再重跑 |
+| plan 报分钟数非法（退出码 2） | 让用户重新填正整数分钟；上限 43200（30 天） |
+| 重新接入后 `run` 返回 3 | revision 已 +1，旧批准不再匹配；展示新摘要并重新请求确认 |
 | owner 未登记 | 问用户，登记用户原话；禁止自编 |
 | 运行 lock 被占用 | 报告并等待，不删锁、不并行强跑 |
 
