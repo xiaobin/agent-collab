@@ -260,6 +260,23 @@ class DispatchTest(unittest.TestCase):
         self.assertNotIn("secret", log.lower())
         self.assertNotIn("comment d1", log)
 
+    def test_prepare_flag_closes_event_to_dispatch_loop_without_duplicates(self):
+        self.configure()
+        self.set_triage(max_batch_events=1, batch_interval_seconds=60)
+        (self.state / "events.jsonl").write_text(
+            json.dumps(comment_event("p1")) + "\n" + json.dumps(comment_event("p2")) + "\n"
+        )
+        first = self.dispatch("--prepare", timeout=5)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(first.stdout.count('"state": "prepared"'), 2)
+        self.assertEqual(first.stdout.count('"state": "applied"'), 2)
+        batches = sorted((self.state / "triage" / "batches").iterdir())
+        self.assertEqual(len(batches), 2)
+        second = self.dispatch("--prepare", timeout=5)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertNotIn('"state": "prepared"', second.stdout)
+        self.assertEqual((self.project / "fake-herdr.log").read_text().count("TRIAGE_BATCH"), 2)
+
     def test_duplicate_dispatch_does_not_run_pane_twice(self):
         self.configure()
         self.prepare()

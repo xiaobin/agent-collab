@@ -31,6 +31,7 @@ from bot_triage import (
     load_definition,
     lock_path,
     parse_results_file,
+    prepare_batches,
     render_report,
     triage_dir,
 )
@@ -614,6 +615,19 @@ def _counts(rows: list[dict[str, Any]]) -> dict[str, int]:
 def cmd_dispatch(args: Any) -> int:
     while True:
         try:
+            if getattr(args, "prepare", False):
+                batches, pending = prepare_batches(
+                    args.project_root.resolve(),
+                    args.bot_id,
+                )
+                for batch in batches:
+                    print(json.dumps({
+                        "state": "prepared",
+                        "batch_id": batch["batch_id"],
+                        "event_count": batch["event_count"],
+                        "path": str(batches_dir(args.project_root.resolve(), args.bot_id) / batch["batch_id"] / "batch.json"),
+                        "pending": pending,
+                    }, ensure_ascii=False, sort_keys=True), flush=True)
             results = dispatch_ready_batches(
                 args.project_root.resolve(),
                 args.bot_id,

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.11] - 2026-11-26
+
+### Added
+
+- `triage dispatch --prepare`：在派发前调用现有幂等 `prepare_batches`，按 30 分钟/20 条阈值自动建批；`--watch --prepare` 形成“事件 → 批次 → Agent → 校验 → 报告”的完整自动链路。
+- 新增 `--prepare` 回归：两条事件自动分两批、Agent 结果落盘、重复执行不重复建批或重复派发。
+
+### Compatibility
+
+- 不带 `--prepare` 的 `triage dispatch` 保持只消费 ready 批次的旧行为；常驻采集 definition 无需修改。
+- 版本升至 0.4.11；仍然只读飞书、不调模型 CLI、不执行分诊动作。
+
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
 ## [0.4.10] - 2026-11-26

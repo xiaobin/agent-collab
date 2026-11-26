@@ -111,7 +111,7 @@ CLI 与 Agent 之间通过项目本地的持久化事件队列连接，不让常
 2. 当存在未分诊事件，并且距上一批次达到 `triage_batch_interval_seconds`，或待分诊数量达到 `triage_max_batch_events` 时，CLI 原子生成一个待分诊批次。空轮询不创建批次。
 3. CLI 只在面板输出一条简短的 `TRIAGE_READY` 摘要，包含批次 ID、事件数和待分诊文件路径，不逐条调用模型。
 4. 默认 `triage_trigger=herdr_batch` 时，`triage dispatch` 按配置中的 workspace label + cwd 解析目标 pane，优先选择 `agent_status=idle` 且 agent 为 `claude`/`codex`/`pi` 的 Agent；协调者不得打断仍在执行其他任务的 Agent，忙时保持队列等待。派发前先排除派发方自身：`HERDR_PANE_ID`、本项目 `state/pane.pid` 对应 pane、`exclude_panes`；`allow_pane_labels` 非空时只允许匹配项。只剩自身时保持 pending 并写明原因，绝不把批次派回自己。派发前先 claim，同一批次只允许一个派发生效；`pane run` 的 0 退出只表示入队，必须等 Agent 写出完整结果并通过 `apply` 校验。没有可用协调者时保持持久化待办，不假装已经分诊，也不反复发新派单。
-5. `triage_trigger=manual` 时只生成批次和提示，由用户手动触发同一分诊流程。`triage dispatch --watch` 可作为项目侧自动派发入口；配置缺失、Herdr 不可用、无 idle pane 都保持 `pending` 并记录原因。
+5. `triage_trigger=manual` 时只生成批次和提示，由用户手动触发同一分诊流程。`triage dispatch --watch --prepare` 是项目侧完整自动入口：每个周期先按批次阈值幂等建批，再按配置派发；不带 `--prepare` 时只消费已有 ready 批次。配置缺失、Herdr 不可用、无 idle pane 都保持 `pending` 并记录原因。
 
 每个派单必须有 `goal_ref`、`batch_id`、`attempt_id`、绝对项目 cwd 和明确写范围。第一版分诊 Agent 对项目代码只读，只允许写本组件的分诊状态和报告目录。认证失效、配置错误等运行异常由 CLI 直接报警，不消耗一次模型分诊；业务事件才进入上述批次。
 

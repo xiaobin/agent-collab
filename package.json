@@ -1,6 +1,6 @@
 {
   "name": "agent-collab",
-  "version": "0.4.10",
+  "version": "0.4.11",
   "description": "Shared project collaboration workflow for Claude Code, Pi, and Codex",
   "private": true,
   "keywords": [

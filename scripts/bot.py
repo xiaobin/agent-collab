@@ -533,6 +533,7 @@ def build_parser() -> argparse.ArgumentParser:
     triage_dispatch.add_argument("--bot-id", required=True)
     triage_dispatch.add_argument("--herdr-bin", default=None)
     triage_dispatch.add_argument("--watch", action="store_true", help="keep dispatching ready batches")
+    triage_dispatch.add_argument("--prepare", action="store_true", help="prepare unbatched events before dispatching")
     triage_dispatch.add_argument("--interval-seconds", type=float, default=30.0)
     triage_dispatch.set_defaults(func=bot_dispatch.cmd_dispatch)
     triage_report = triage_sub.add_parser("report", help="render a human-readable report")

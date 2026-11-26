@@ -48,7 +48,7 @@ sh "<skill_dir>/scripts/bot.sh" triage apply   --bot-id <bot-id> --batch-id <bat
 sh "<skill_dir>/scripts/bot.sh" triage dispose --bot-id <bot-id> --triage-id <triage-id> \
   --action <accepted|dismissed|deferred|noted|handed_off> --actor <actor-ref>
 sh "<skill_dir>/scripts/bot.sh" triage report  --bot-id <bot-id> [--batch-id <batch-id>] [--source agent|heuristic]
-sh "<skill_dir>/scripts/bot.sh" triage dispatch --bot-id <bot-id> [--watch --interval-seconds <seconds>]
+sh "<skill_dir>/scripts/bot.sh" triage dispatch --bot-id <bot-id> [--watch --prepare --interval-seconds <seconds>]
 ```
 
 派发前先排除派发方自身：优先 `HERDR_PANE_ID`，其次本项目 `state/pane.pid`（用 `herdr pane process-info` 核对 PID），再叠加 `triage.dispatch.exclude_panes`；只选 `claude`、`codex`、`pi` 的 idle pane，shell/unknown 跳过。`allow_pane_labels` 非空时只匹配 label、terminal title 或 pane_id。若只剩自身 pane，保持 `pending` 并写 `only the dispatching pane is available`，不得自派自答。
