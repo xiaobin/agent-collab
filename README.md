@@ -28,26 +28,124 @@
 
 仓库还包含一套与 Skill 体系独立的声明式运行内核，用于把「定时拉取 → 分诊 → 人读报告 → 按需派发」这类长期任务做成可批准的 bot。**bot 是长期身份，不是长期模型会话**：持久的是定义、批准快照和游标，模型只按批做判断。
 
+### 最小试用：让飞书待办每天自动拉下来
+
+当你希望飞书（Meegle）上的待办和评论每天自动拉下来、并整理成人话报告时，按下面三步做一次。配置和批准只在第一次做，日常使用不需要碰命令。
+
+**第 1 步 准备配置**：把模板拷进项目，填上你自己的身份。做完会得到一份只读、可先自查的配置。
+
+下面命令里 `AC` 是这个仓库在本机的位置，`P` 是要接入的项目根目录，先按自己的路径改这两行：
+
+```bash
+AC=~/code/agent-collab     # 这个仓库的位置
+P=~/code/my-project        # 要接入的项目根目录
+
+mkdir -p "$P/.herdr/bots/feishu-trial"
+cp "$AC/templates/bot-policy.json"     "$P/.herdr/bot-policy.json"
+cp "$AC/templates/bot-definition.json" "$P/.herdr/bots/feishu-trial/definition.json"
+```
+
+然后改三处：
+
+- `.herdr/bots/feishu-trial/definition.json`（定义文件，说明这个采集任务是什么、多久跑一次、允许读什么）：把 `replace-me` 全部换成 `feishu-trial`，把 `adapter.name` 从 `fake` 改成 `feishu`（数据来源从本地假数据换成飞书只读接口），把 `permissions.network_read` 改成 `true`。
+- `.herdr/bot-policy.json`（项目策略，说明这个项目允许它做什么）：`allowed_adapters` 加上 `"feishu"`，`allow_network_read` 改成 `true`。
+- 新建 `.herdr/bots/feishu-trial/adapter-config.json`，只填两个身份字段：`project_key`（Meegle 项目标识）和 `expected_user_key`（你自己的 Meegle 账号标识）。这两个字段由定义文件里的 `adapter.config_ref` 指过来，写在 adapter-config.json 里，不在 definition.json 本体。
+
+```bash
+cat > "$P/.herdr/bots/feishu-trial/adapter-config.json" <<'JSON'
+{
+  "project_key": "填 Meegle 项目标识",
+  "expected_user_key": "填你的 Meegle 账号标识"
+}
+JSON
+```
+
+填完先自查一次（不联网）：
+
+```bash
+cd "$P"
+python3 "$AC/scripts/bot.py" validate --definition .herdr/bots/feishu-trial/definition.json
+```
+
+看到 `OK: feishu-trial revision 1 adapter=feishu` 就说明配置可用。
+
+**第 2 步 批准一次**：批准 = 把当前这几个配置文件的指纹记下来。做完会得到一张批准快照，之后配置一改就必须重新批准。
+
+```bash
+python3 "$AC/scripts/bot.py" approve \
+  --definition .herdr/bots/feishu-trial/definition.json \
+  --approval-id feishu-trial-1 \
+  --approver-ref "$(whoami)"
+```
+
+定义、项目策略、身份配置里任何一个改了，旧快照就失效：重跑这条 `approve`。正在常驻的话它会自己停下并提示重新批准。
+
+**第 3 步 启动采集**：先试跑一次，确认能登录、能拉到东西，再决定是否常驻。
+
+```bash
+python3 "$AC/scripts/bot.py" run --bot-id feishu-trial --once
+
+# 确认没问题后改成常驻；86400 秒 = 每天一次，可以自己改
+python3 "$AC/scripts/bot.py" run --bot-id feishu-trial --resident --interval-seconds 86400
+```
+
+`--once` 拉一轮就退出；`--resident` 按间隔一直跑。常驻进程被中断或手动 `stop` 后，要用 `resume` 再拉起来，不要直接再 `run`。
+
+**结果在哪看**
+
+- 报告：`.herdr/bots/feishu-trial/reports/triage/` 下的 `*.agent.md` 是人读报告，同名 `.agent.panel.txt` 是面板摘要。报告要等这一批事件由 agent 判断完、跑过 `triage report` 才生成；采集本身只把原始事件写进 `.herdr/bots/feishu-trial/state/events.jsonl`。
+- 状态：`python3 "$AC/scripts/bot.py" status --bot-id feishu-trial` 会打印一段 JSON，重点看 `state`（第一次是 `uninitialized`，正常跑过是 `ok`，被停或认证失效是 `paused`，此时看 `last_error` 里的原因）、`last_success_at` 和 `last_error`。
+
+运行约束：只读飞书采集、报告只写本地、不向飞书写回评论；`run --resident` 的单实例锁基于本地文件系统语义，NFS 挂载未验证；token 失效后的自动续期未实现，需要人工重新登录。
+
+<details>
+<summary>高级用法：模块清单、全部子命令与占位符</summary>
+
+模块：
+
 - `scripts/bot.py`：统一 CLI，子命令 `validate` / `explain` / `approve` / `run`（`--once` 或 `--resident`）/ `status` / `stop` / `resume` / `triage`（`prepare` / `claim` / `apply` / `dispose` / `report` / `dispatch`）。
-- `scripts/bot_schema.py`：定义与项目策略校验、适配器配置解析、身份绑定与定义摘要计算。适配器配置优先级为 `MEEGLE_*` 环境变量 > 定义中 `adapter.config_ref` 指向的 `.herdr/bots/<bot-id>/adapter-config.json` > 内置默认（仅非身份项）。飞书适配器要求 `project_key`、`expected_user_key` 必填且无默认值，绝不兜底；配置错误在首次远程调用前非零退出。批准快照记录定义、项目策略和适配器配置的 SHA-256，任一漂移都要求重新批准，运行中进入 `approval_invalidated` 后必须重新批准；`stop` 之后必须显式 `resume`。
+- `scripts/bot_schema.py`：定义与项目策略校验、适配器配置解析、身份绑定与定义摘要计算。适配器配置优先级为 `MEEGLE_*` 环境变量 > 定义中 `adapter.config_ref` 指向的适配器配置文件 > 内置默认（仅非身份项）。飞书适配器要求 `project_key`、`expected_user_key` 必填且无默认值，绝不兜底；配置错误在首次远程调用前非零退出。批准快照记录定义、项目策略和适配器配置的 SHA-256，任一漂移都要求重新批准，运行中进入 `approval_invalidated` 后必须重新批准；`stop` 之后必须显式 `resume`。
 - `scripts/bot_runtime.py`：状态机、游标、幂等事件、单实例锁、心跳租约、指数退避、优雅停止、失败预算与运行统计。
-- `scripts/bot_adapters/`：`fake`（合成数据测试）与 `feishu_sync`（飞书只读采集：我的待办 + 评论，可按 `work_item_id` 定向）。实际只调用 `meegle auth status` / `user me` / `user search` / `mywork todo` / `workitem get` / `comment list`，任何写操作直接拒绝；姓名缓存 TTL 为成功 24 小时、未命中 5 分钟。网络抖动与 token 失效分开处理：前者按退避重试，后者停机并要求人工重新登录。
+- `scripts/bot_adapters/`：`fake`（合成数据测试）与 `feishu`（飞书只读采集：我的待办 + 评论，可按 `work_item_id` 定向）。实际只调用 `meegle auth status` / `user me` / `user search` / `mywork todo` / `workitem get` / `comment list`，任何写操作直接拒绝；姓名缓存 TTL 为成功 24 小时、未命中 5 分钟。网络抖动与 token 失效分开处理：前者按退避重试，后者停机并要求人工重新登录。
 - `scripts/bot_triage.py`：分诊、人读报告与结果应用。结论必须由真实 Agent 逐条产出并标 `source=agent`；启发式结论只能标 `source=heuristic`，由 `--source heuristic` 单独渲染，不混入默认报告。
 - `scripts/bot_dispatch.py`：`triage dispatch --watch [--prepare]` 派发就绪批次；批次由 `triage prepare` 按 `triage.batch_interval_seconds` 或 `triage.max_batch_events` 生成。派发经 Herdr 按 workspace label + cwd 选空闲 Agent pane，排除派发方自身与 shell/unknown pane，目标 working 时保持 `pending` 并重试。
 - `templates/bot-definition.json`、`templates/bot-policy.json`、[Bot 接入说明](skills/project-collaboration/references/bot-framework.md)：模板与接入文档。
 - 设计正本：[通用 Bot 框架](docs/bot-framework-design.md)（身份与分级创建、L0–L4 权限取交集、审批绑定），[飞书场景实例](docs/feishu-sync-design.md)。
 
-最小试用（`fake` 适配器，不触网）：在项目根准备 `.herdr/bot-policy.json` 与 `.herdr/bots/<bot-id>/{definition.json,adapter-config.json}`，然后：
+全部子命令（在项目根目录运行，`$AC` 同上）：
 
 ```bash
-python3 scripts/bot.py validate --definition .herdr/bots/<bot-id>/definition.json
-python3 scripts/bot.py approve  --definition .herdr/bots/<bot-id>/definition.json \
+python3 "$AC/scripts/bot.py" validate --definition .herdr/bots/<bot-id>/definition.json
+python3 "$AC/scripts/bot.py" explain  --definition .herdr/bots/<bot-id>/definition.json
+python3 "$AC/scripts/bot.py" approve  --definition .herdr/bots/<bot-id>/definition.json \
   --approval-id <approval-id> --approver-ref <user-ref>
-python3 scripts/bot.py run      --bot-id <bot-id> --once
-python3 scripts/bot.py status   --bot-id <bot-id>
+python3 "$AC/scripts/bot.py" run      --bot-id <bot-id> --once
+python3 "$AC/scripts/bot.py" run      --bot-id <bot-id> --resident --interval-seconds <seconds>
+python3 "$AC/scripts/bot.py" status   --bot-id <bot-id>
+python3 "$AC/scripts/bot.py" stop     --bot-id <bot-id> --reason <reason>
+python3 "$AC/scripts/bot.py" resume   --bot-id <bot-id>
+python3 "$AC/scripts/bot.py" triage prepare  --bot-id <bot-id> [--force]
+python3 "$AC/scripts/bot.py" triage claim    --bot-id <bot-id> --batch-id <batch-id> --attempt-id <attempt-id>
+python3 "$AC/scripts/bot.py" triage apply    --bot-id <bot-id> --batch-id <batch-id> --file <results.json>
+python3 "$AC/scripts/bot.py" triage dispose  --bot-id <bot-id> --triage-id <triage-id> \
+  --action <accepted|dismissed|deferred|noted|handed_off> --actor <actor-ref>
+python3 "$AC/scripts/bot.py" triage report   --bot-id <bot-id> [--batch-id <batch-id>] [--source agent|heuristic]
+python3 "$AC/scripts/bot.py" triage dispatch --bot-id <bot-id> [--watch --prepare]
 ```
 
-运行约束：只读飞书采集、报告只写本地、不向飞书写回评论；`run --resident` 的单实例锁基于本地文件系统语义，NFS 挂载未验证；token 失效后的自动续期未实现，需要人工重新登录。
+占位符：
+
+| 占位符 | 含义 |
+| --- | --- |
+| `<bot-id>` | 这个采集任务的本地标识，试用里固定用 `feishu-trial` |
+| `<approval-id>` | 这次批准的编号，自己起名即可，用来区分多次批准 |
+| `<user-ref>` | 批准人的标识，会记进批准快照 |
+| `<batch-id>` | 一批待分诊事件的编号，由 `triage prepare` 生成 |
+| `<triage-id>` | 单条分诊结论的编号，用来记录后续处置 |
+| `<actor-ref>` | 做处置的人或 agent 的标识 |
+| `<seconds>` / `<reason>` / `<results.json>` | 常驻间隔秒数 / 停止原因 / agent 写出的分诊结果文件 |
+
+</details>
 
 ## 运行前置
 
