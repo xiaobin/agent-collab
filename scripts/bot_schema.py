@@ -28,6 +28,8 @@ DISPATCH_KEYS = {
     "herdr_bin",
     "ack_timeout_seconds",
     "output_dir",
+    "exclude_panes",
+    "allow_pane_labels",
 }
 
 DEFINITION_KEYS = {
@@ -512,6 +514,14 @@ def _validate_dispatch(value: Any, result: ValidationResult) -> None:
                 "triage.dispatch.output_dir: must be a relative path inside the bot directory"
             )
     _integer(value, "ack_timeout_seconds", "triage.dispatch", result, minimum=1)
+    for key in ("exclude_panes", "allow_pane_labels"):
+        item = value.get(key)
+        if item is None:
+            continue
+        if not isinstance(item, list) or not all(
+            isinstance(entry, str) and entry.strip() for entry in item
+        ):
+            result.errors.append(f"triage.dispatch.{key}: must be a list of non-empty strings")
 
 
 def _workspace_root(definition: dict[str, Any]) -> str | None:

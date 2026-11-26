@@ -50,13 +50,24 @@ if args[:2] == ["workspace", "list"]:
     ]}}))
     raise SystemExit(0)
 if args[:2] == ["pane", "list"]:
-    print(json.dumps({"result": {"panes": [{
-        "pane_id": "w9:p1",
-        "workspace_id": "w9",
-        "cwd": state.get("cwd", str(base)),
-        "agent": "claude",
-        "agent_status": state.get("status", "idle"),
-    }]}}))
+    panes = state.get("panes")
+    if not isinstance(panes, list):
+        panes = [{
+            "pane_id": "w9:p1",
+            "workspace_id": "w9",
+            "cwd": state.get("cwd", str(base)),
+            "agent": "claude",
+            "agent_status": state.get("status", "idle"),
+        }]
+    print(json.dumps({"result": {"panes": panes}}))
+    raise SystemExit(0)
+if args[:2] == ["pane", "process-info"]:
+    pane_id = args[args.index("--pane") + 1]
+    pids = state.get("pane_pids", {}).get(pane_id, [])
+    print(json.dumps({"result": {"process_info": {
+        "foreground_process_group_id": pids[0] if pids else None,
+        "foreground_processes": [{"pid": pid} for pid in pids],
+    }}}))
     raise SystemExit(0)
 if args[:2] == ["pane", "run"]:
     prompt = args[3]
@@ -128,7 +139,7 @@ class DispatchTest(unittest.TestCase):
     def tearDown(self):
         self.tempdir.cleanup()
 
-    def cli(self, *args, timeout=20):
+    def cli(self, *args, timeout=20, env=None):
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
             cwd=self.project,
@@ -136,6 +147,7 @@ class DispatchTest(unittest.TestCase):
             text=True,
             check=False,
             timeout=timeout,
+            env={**os.environ, **(env or {})},
         )
 
     def set_triage(self, **overrides):
@@ -143,13 +155,14 @@ class DispatchTest(unittest.TestCase):
         definition["triage"].update(overrides)
         self.definition_path.write_text(json.dumps(definition))
 
-    def dispatch(self, *args, timeout=20):
+    def dispatch(self, *args, timeout=20, env=None):
         return self.cli(
             "triage", "dispatch",
             "--project-root", str(self.project),
             "--bot-id", "test-bot",
             *args,
             timeout=timeout,
+            env=env,
         )
 
     def prepare(self):
@@ -164,22 +177,37 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout.split("batch_id=", 1)[1].split()[0]
 
-    def configure(self, *, mode="write", status="idle", cwd=None, timeout=1):
-        (self.project / "fake-herdr-state.json").write_text(json.dumps({
+    def configure(
+        self,
+        *,
+        mode="write",
+        status="idle",
+        cwd=None,
+        timeout=1,
+        panes=None,
+        exclude_panes=None,
+        allow_pane_labels=None,
+    ):
+        state = {
             "mode": mode,
             "status": status,
             "cwd": str(cwd or self.project),
-        }))
-        self.set_triage(
-            triage_trigger="herdr_batch",
-            dispatch={
-                "mode": "herdr",
-                "workspace_label": "test-ws",
-                "cwd_marker": str(self.project),
-                "herdr_bin": str(self.herdr),
-                "ack_timeout_seconds": timeout,
-            },
-        )
+        }
+        if panes is not None:
+            state["panes"] = panes
+        (self.project / "fake-herdr-state.json").write_text(json.dumps(state))
+        dispatch = {
+            "mode": "herdr",
+            "workspace_label": "test-ws",
+            "cwd_marker": str(self.project),
+            "herdr_bin": str(self.herdr),
+            "ack_timeout_seconds": timeout,
+        }
+        if exclude_panes is not None:
+            dispatch["exclude_panes"] = exclude_panes
+        if allow_pane_labels is not None:
+            dispatch["allow_pane_labels"] = allow_pane_labels
+        self.set_triage(triage_trigger="herdr_batch", dispatch=dispatch)
 
     def test_manual_trigger_is_disabled(self):
         self.set_triage(triage_trigger="manual")
@@ -271,6 +299,207 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(result.returncode, 5)
         record = json.loads((self.state / "triage" / "dispatch.jsonl").read_text().splitlines()[-1])
         self.assertEqual(record["state"], "invalid_output")
+
+    def test_self_pane_is_never_dispatched(self):
+        self.configure(
+            panes=[{
+                "pane_id": "w9:p1",
+                "workspace_id": "w9",
+                "cwd": str(self.project),
+                "agent": "claude",
+                "agent_status": "idle",
+            }],
+        )
+        batch_id = self.prepare()
+        result = self.dispatch(env={"HERDR_PANE_ID": "w9:p1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("only the dispatching pane is available", result.stdout)
+        batch = json.loads((self.state / "triage" / "batches" / batch_id / "batch.json").read_text())
+        self.assertEqual(batch["status"], "pending")
+        self.assertFalse((self.project / "fake-herdr.log").exists())
+
+    def test_exclude_panes_keeps_batch_pending_with_config_reason(self):
+        self.configure(
+            panes=[{
+                "pane_id": "w9:p1",
+                "workspace_id": "w9",
+                "cwd": str(self.project),
+                "agent": "claude",
+                "agent_status": "idle",
+            }],
+            exclude_panes=["w9:p1"],
+        )
+        batch_id = self.prepare()
+        result = self.dispatch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("excluded by configuration", result.stdout)
+        self.assertNotIn("only the dispatching pane", result.stdout)
+        batch = json.loads((self.state / "triage" / "batches" / batch_id / "batch.json").read_text())
+        self.assertEqual(batch["status"], "pending")
+        self.assertFalse((self.project / "fake-herdr.log").exists())
+
+    def test_pane_pid_only_self_is_reported_as_self(self):
+        self.configure(
+            panes=[{
+                "pane_id": "w9:p1",
+                "workspace_id": "w9",
+                "cwd": str(self.project),
+                "agent": "claude",
+                "agent_status": "idle",
+            }],
+        )
+        state_path = self.project / "fake-herdr-state.json"
+        state = json.loads(state_path.read_text())
+        state["pane_pids"] = {"w9:p1": [4242]}
+        state_path.write_text(json.dumps(state))
+        (self.state / "pane.pid").write_text("4242")
+        batch_id = self.prepare()
+        result = self.dispatch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("only the dispatching pane is available", result.stdout)
+        batch = json.loads((self.state / "triage" / "batches" / batch_id / "batch.json").read_text())
+        self.assertEqual(batch["status"], "pending")
+        self.assertFalse((self.project / "fake-herdr.log").exists())
+
+    def test_self_pane_skips_to_another_idle_pane(self):
+        self.configure(
+            panes=[
+                {
+                    "pane_id": "w9:p1",
+                    "workspace_id": "w9",
+                    "cwd": str(self.project),
+                    "agent": "claude",
+                    "agent_status": "idle",
+                },
+                {
+                    "pane_id": "w9:p2",
+                    "workspace_id": "w9",
+                    "cwd": str(self.project),
+                    "agent": "claude",
+                    "agent_status": "idle",
+                },
+            ],
+        )
+        self.prepare()
+        result = self.dispatch(timeout=5, env={"HERDR_PANE_ID": "w9:p1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads((self.state / "triage" / "dispatch.jsonl").read_text().splitlines()[-1])
+        self.assertEqual(record["state"], "applied")
+        self.assertEqual(record["pane_id"], "w9:p2")
+
+    def test_pane_pid_file_excludes_source_pane(self):
+        self.configure(
+            panes=[
+                {
+                    "pane_id": "w9:p1",
+                    "workspace_id": "w9",
+                    "cwd": str(self.project),
+                    "agent": "claude",
+                    "agent_status": "idle",
+                },
+                {
+                    "pane_id": "w9:p2",
+                    "workspace_id": "w9",
+                    "cwd": str(self.project),
+                    "agent": "claude",
+                    "agent_status": "idle",
+                },
+            ],
+        )
+        state_path = self.project / "fake-herdr-state.json"
+        state = json.loads(state_path.read_text())
+        state["pane_pids"] = {"w9:p1": [4242]}
+        state_path.write_text(json.dumps(state))
+        (self.state / "pane.pid").write_text("4242")
+        self.prepare()
+        result = self.dispatch(timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads((self.state / "triage" / "dispatch.jsonl").read_text().splitlines()[-1])
+        self.assertEqual(record["pane_id"], "w9:p2")
+
+    def test_non_agent_pane_is_skipped(self):
+        self.configure(
+            panes=[{
+                "pane_id": "w9:p1",
+                "workspace_id": "w9",
+                "cwd": str(self.project),
+                "agent": "shell",
+                "agent_status": "idle",
+            }],
+        )
+        batch_id = self.prepare()
+        result = self.dispatch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no actionable agent pane", result.stdout)
+        batch = json.loads((self.state / "triage" / "batches" / batch_id / "batch.json").read_text())
+        self.assertEqual(batch["status"], "pending")
+        self.assertFalse((self.project / "fake-herdr.log").exists())
+
+    def test_allow_pane_labels_limits_targets(self):
+        self.configure(
+            panes=[
+                {
+                    "pane_id": "w9:p1",
+                    "workspace_id": "w9",
+                    "cwd": str(self.project),
+                    "agent": "claude",
+                    "agent_status": "idle",
+                    "terminal_title_stripped": "other",
+                },
+                {
+                    "pane_id": "w9:p2",
+                    "workspace_id": "w9",
+                    "cwd": str(self.project),
+                    "agent": "claude",
+                    "agent_status": "idle",
+                    "terminal_title_stripped": "allowed",
+                },
+            ],
+            allow_pane_labels=["allowed"],
+        )
+        self.prepare()
+        result = self.dispatch(timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads((self.state / "triage" / "dispatch.jsonl").read_text().splitlines()[-1])
+        self.assertEqual(record["pane_id"], "w9:p2")
+
+    def test_allow_pane_labels_matches_any_pane_label(self):
+        self.configure(
+            panes=[{
+                "pane_id": "w9:p1",
+                "workspace_id": "w9",
+                "cwd": str(self.project),
+                "agent": "claude",
+                "agent_status": "idle",
+                "label": "display-name",
+                "terminal_title_stripped": "allowed-title",
+            }],
+            allow_pane_labels=["allowed-title"],
+        )
+        self.prepare()
+        result = self.dispatch(timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads((self.state / "triage" / "dispatch.jsonl").read_text().splitlines()[-1])
+        self.assertEqual(record["pane_id"], "w9:p1")
+
+    def test_dispatch_pane_lists_must_be_string_lists(self):
+        self.set_triage(
+            triage_trigger="herdr_batch",
+            dispatch={
+                "mode": "herdr",
+                "workspace_label": "test-ws",
+                "cwd_marker": str(self.project),
+                "herdr_bin": str(self.herdr),
+                "allow_pane_labels": "allowed",
+            },
+        )
+        result = self.cli(
+            "validate",
+            "--definition", str(self.definition_path),
+            "--project-root", str(self.project),
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("allow_pane_labels", result.stderr)
 
     def test_pane_id_is_rejected_in_configuration(self):
         self.set_triage(

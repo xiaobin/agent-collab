@@ -2,6 +2,20 @@
 
 本项目使用 SemVer。公共核心契约的语义变化需要用户确认，详见 `docs/governance.md`。
 
+## [0.4.10] - 2026-11-26
+
+### Fixed
+
+- `triage dispatch` 不再把批次派给派发方自身：优先排除 `HERDR_PANE_ID`，其次用本项目 `state/pane.pid` 与 `herdr pane process-info` 核对 pane，再叠加配置 `triage.dispatch.exclude_panes`。
+- 新增 `triage.dispatch.allow_pane_labels`；非空时只允许匹配 label、terminal title 或 pane_id 的目标。
+- 只选择 `claude`、`codex`、`pi` 的 idle Agent pane；shell、unknown 或缺失 agent 类型跳过，并记录“no actionable agent pane”。
+- 只剩自身 pane 时保持 `pending`，原因写明“only the dispatching pane is available”，不自派自答。
+
+### Compatibility
+
+- 已有 `herdr_batch` 配置无需迁移；未配置 `exclude_panes`/`allow_pane_labels` 时默认不限制额外 pane，自身 pane 仍自动排除。
+- 仍不执行飞书写操作，不改变批次、幂等、结果校验和报告契约。
+
 ## [0.4.9] - 2026-11-26
 
 ### Added

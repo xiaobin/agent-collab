@@ -12,7 +12,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from bot_runtime import FileLock, append_jsonl, bot_dir, read_bytes, read_json, write_text
+from bot_runtime import (
+    FileLock,
+    append_jsonl,
+    bot_dir,
+    read_bytes,
+    read_json,
+    state_dir,
+    write_text,
+)
+from bot_schema import AGENT_KINDS
 from bot_triage import (
     POLICY_VERSION,
     TriageError,
@@ -97,10 +106,69 @@ def _run_json(command: list[str]) -> tuple[dict[str, Any] | None, str]:
     return value, ""
 
 
+def _pane_labels(row: dict[str, Any]) -> set[str]:
+    labels: set[str] = set()
+    for key in ("label", "terminal_title_stripped", "terminal_title", "pane_id"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            labels.add(value.strip())
+    return labels
+
+
+
+
+def _pane_pids(herdr_bin: str, pane_id: str) -> set[int]:
+    data, _ = _run_json([herdr_bin, "pane", "process-info", "--pane", pane_id])
+    if data is None:
+        return set()
+    info = data.get("result", {}).get("process_info", {})
+    if not isinstance(info, dict):
+        return set()
+    pids: set[int] = set()
+    group = info.get("foreground_process_group_id")
+    if isinstance(group, int) and not isinstance(group, bool):
+        pids.add(group)
+    for process in info.get("foreground_processes", []):
+        if isinstance(process, dict):
+            pid = process.get("pid")
+            if isinstance(pid, int) and not isinstance(pid, bool):
+                pids.add(pid)
+    return pids
+
+
+def _self_pane_ids(
+    project_root: Path,
+    bot_id: str,
+    herdr_bin: str,
+    candidates: list[dict[str, Any]],
+) -> set[str]:
+    self_ids: set[str] = set()
+    env_pane = os.environ.get("HERDR_PANE_ID")
+    if isinstance(env_pane, str) and env_pane.strip():
+        self_ids.add(env_pane.strip())
+    pane_pid: int | None = None
+    try:
+        raw = read_bytes(project_root, state_dir(project_root, bot_id) / "pane.pid")
+        pane_pid = int(raw.decode("utf-8").strip())
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        pane_pid = None
+    if pane_pid is not None:
+        for row in candidates:
+            pane_id = row.get("pane_id")
+            if isinstance(pane_id, str) and pane_pid in _pane_pids(herdr_bin, pane_id):
+                self_ids.add(pane_id)
+    return self_ids
+
+
 def _resolve_target(
     herdr_bin: str,
     workspace_label: str,
     cwd_marker: str,
+    *,
+    project_root: Path,
+    bot_id: str,
+    exclude_panes: list[str] | None = None,
+    allow_pane_labels: list[str] | None = None,
 ) -> dict[str, Any]:
     workspaces, error = _run_json([herdr_bin, "workspace", "list"])
     if workspaces is None:
@@ -124,7 +192,7 @@ def _resolve_target(
         return {"state": "unavailable", "reason": "herdr pane list is malformed"}
 
     marker = Path(os.path.abspath(cwd_marker))
-    working: list[str] = []
+    matching: list[dict[str, Any]] = []
     for row in pane_rows:
         if not isinstance(row, dict) or row.get("workspace_id") != workspace_id:
             continue
@@ -136,16 +204,83 @@ def _resolve_target(
             matches = pane_cwd == marker or marker in pane_cwd.parents
         except OSError:
             matches = False
-        if not matches:
+        if matches:
+            matching.append(row)
+
+    self_ids = _self_pane_ids(project_root, bot_id, herdr_bin, matching)
+    excluded = {str(item).strip() for item in (exclude_panes or []) if str(item).strip()}
+    allow_labels = [item.strip() for item in (allow_pane_labels or []) if item.strip()]
+    idle: list[str] = []
+    working: list[str] = []
+    skipped_self: list[str] = []
+    skipped_excluded: list[str] = []
+    skipped_allowlist: list[str] = []
+    skipped_non_agent: list[str] = []
+    for row in matching:
+        pane_id = row.get("pane_id")
+        if not isinstance(pane_id, str) or not pane_id:
             continue
-        if row.get("agent_status") == "idle" and isinstance(row.get("agent"), str):
-            return {"state": "idle", "pane_id": row["pane_id"], "workspace_id": workspace_id}
+        labels = _pane_labels(row)
+        if pane_id in self_ids:
+            skipped_self.append(pane_id)
+            continue
+        if pane_id in excluded or labels & excluded:
+            skipped_excluded.append(pane_id)
+            continue
+        if allow_labels and pane_id not in allow_labels and not (labels & set(allow_labels)):
+            skipped_allowlist.append(pane_id)
+            continue
         if row.get("agent_status") == "working":
-            working.append(str(row.get("pane_id")))
+            working.append(pane_id)
+            continue
+        if row.get("agent_status") != "idle":
+            continue
+        agent = row.get("agent")
+        if not isinstance(agent, str) or agent not in AGENT_KINDS:
+            skipped_non_agent.append(pane_id)
+            continue
+        idle.append(pane_id)
+
+    if idle:
+        return {"state": "idle", "pane_id": sorted(idle)[0], "workspace_id": workspace_id}
     if working:
         return {
             "state": "busy",
             "reason": f"matching pane is working: {', '.join(sorted(working))}",
+        }
+    if skipped_self:
+        extra = (
+            f"; also excluded by configuration: {', '.join(sorted(skipped_excluded))}"
+            if skipped_excluded
+            else ""
+        )
+        return {
+            "state": "self_only",
+            "reason": (
+                "only the dispatching pane is available; "
+                f"self: {', '.join(sorted(skipped_self))}{extra}"
+            ),
+        }
+    if skipped_excluded:
+        return {
+            "state": "absent",
+            "reason": (
+                "no eligible pane; excluded by configuration: "
+                f"{', '.join(sorted(skipped_excluded))}"
+            ),
+        }
+    if skipped_allowlist:
+        return {
+            "state": "absent",
+            "reason": f"no idle pane matches allow_pane_labels: {', '.join(allow_labels)}",
+        }
+    if skipped_non_agent:
+        return {
+            "state": "absent",
+            "reason": (
+                "no actionable agent pane (expected one of "
+                f"{', '.join(sorted(AGENT_KINDS))}): {', '.join(sorted(skipped_non_agent))}"
+            ),
         }
     return {"state": "absent", "reason": "no matching pane for workspace label and cwd"}
 
@@ -299,7 +434,15 @@ def dispatch_ready_batches(
     if not os.path.isabs(cwd_marker):
         cwd_marker = str(project_root / cwd_marker)
     try:
-        target = _resolve_target(bin_name, label, cwd_marker)
+        target = _resolve_target(
+            bin_name,
+            label,
+            cwd_marker,
+            project_root=project_root,
+            bot_id=bot_id,
+            exclude_panes=config.get("exclude_panes"),
+            allow_pane_labels=config.get("allow_pane_labels"),
+        )
     except OSError as exc:
         target = {"state": "unavailable", "reason": f"herdr unavailable: {exc}"}
 

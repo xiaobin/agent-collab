@@ -50,7 +50,14 @@
     "max_batch_events": 20,
     "max_context_events": 40,
     "human_report_max_items_per_group": 5,
-    "human_report_max_lines": 40
+    "human_report_max_lines": 40,
+    "dispatch": {
+      "mode": "herdr",
+      "workspace_label": "<PROJECT_WORKSPACE_LABEL>",
+      "cwd_marker": "<PROJECT_ROOT>",
+      "exclude_panes": [],
+      "allow_pane_labels": []
+    }
   },
   "outputs": [
     {

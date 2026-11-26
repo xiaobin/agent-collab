@@ -110,7 +110,7 @@ CLI 与 Agent 之间通过项目本地的持久化事件队列连接，不让常
 1. CLI 把通过去重的新增评论和任务变化追加到 `state_dir/events.jsonl`，事件包含稳定 `event_id`、类型、工作项标识、发生时间、首次发现时间和原始结构化内容引用。
 2. 当存在未分诊事件，并且距上一批次达到 `triage_batch_interval_seconds`，或待分诊数量达到 `triage_max_batch_events` 时，CLI 原子生成一个待分诊批次。空轮询不创建批次。
 3. CLI 只在面板输出一条简短的 `TRIAGE_READY` 摘要，包含批次 ID、事件数和待分诊文件路径，不逐条调用模型。
-4. 默认 `triage_trigger=herdr_batch` 时，`triage dispatch` 按配置中的 workspace label + cwd 解析目标 pane，优先选择 `agent_status=idle` 的 Agent；协调者不得打断仍在执行其他任务的 Agent，忙时保持队列等待。派发前先 claim，同一批次只允许一个派发生效；`pane run` 的 0 退出只表示入队，必须等 Agent 写出完整结果并通过 `apply` 校验。没有可用协调者时保持持久化待办，不假装已经分诊，也不反复发新派单。
+4. 默认 `triage_trigger=herdr_batch` 时，`triage dispatch` 按配置中的 workspace label + cwd 解析目标 pane，优先选择 `agent_status=idle` 且 agent 为 `claude`/`codex`/`pi` 的 Agent；协调者不得打断仍在执行其他任务的 Agent，忙时保持队列等待。派发前先排除派发方自身：`HERDR_PANE_ID`、本项目 `state/pane.pid` 对应 pane、`exclude_panes`；`allow_pane_labels` 非空时只允许匹配项。只剩自身时保持 pending 并写明原因，绝不把批次派回自己。派发前先 claim，同一批次只允许一个派发生效；`pane run` 的 0 退出只表示入队，必须等 Agent 写出完整结果并通过 `apply` 校验。没有可用协调者时保持持久化待办，不假装已经分诊，也不反复发新派单。
 5. `triage_trigger=manual` 时只生成批次和提示，由用户手动触发同一分诊流程。`triage dispatch --watch` 可作为项目侧自动派发入口；配置缺失、Herdr 不可用、无 idle pane 都保持 `pending` 并记录原因。
 
 每个派单必须有 `goal_ref`、`batch_id`、`attempt_id`、绝对项目 cwd 和明确写范围。第一版分诊 Agent 对项目代码只读，只允许写本组件的分诊状态和报告目录。认证失效、配置错误等运行异常由 CLI 直接报警，不消耗一次模型分诊；业务事件才进入上述批次。
@@ -296,6 +296,8 @@ status: proposed
 | `triage.dispatch.cwd_marker` | 无 | `herdr_batch` 时必填 | 无 | 目标 Agent 工作目录；相对路径按项目根解析，只匹配该 workspace 内 cwd 相同或位于其下的 pane |
 | `triage.dispatch.ack_timeout_seconds` | 无 | 否 | `300` | 正整数；派发后等待 Agent 结果文件的最长秒数，超时记录缺失事件，不标记已分诊 |
 | `triage.dispatch.output_dir` | 无 | 否 | `state/triage/output` | 相对于 bot 目录；Agent 结果文件目录，必须留在 bot 目录内 |
+| `triage.dispatch.exclude_panes` | 无 | 否 | `[]` | 额外排除的 pane ID 或 label；派发方自身由 `HERDR_PANE_ID` / `state/pane.pid` 自动排除 |
+| `triage.dispatch.allow_pane_labels` | 无 | 否 | `[]` | 空表示不限制；非空时只允许匹配 label、terminal title 或 pane_id 的 pane |
 | `triage_batch_interval_seconds` | `AGENT_COLLAB_FEISHU_TRIAGE_BATCH_INTERVAL_SECONDS` | 否 | `1800` | 正整数，建议不低于 300 秒；存在未分诊事件时，距上一批达到该间隔才生成新批次 |
 | `triage_max_batch_events` | `AGENT_COLLAB_FEISHU_TRIAGE_MAX_BATCH_EVENTS` | 否 | `20` | 正整数；待分诊事件达到该数量时提前生成批次，避免持续积压 |
 | `triage_mode` | `AGENT_COLLAB_FEISHU_TRIAGE_MODE` | 否 | `suggest_only` | 当前只允许 `suggest_only`；只输出分类和建议，不执行本地处置或飞书写操作，其他值直接报不支持 |

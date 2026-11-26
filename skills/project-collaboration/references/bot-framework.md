@@ -51,6 +51,8 @@ sh "<skill_dir>/scripts/bot.sh" triage report  --bot-id <bot-id> [--batch-id <ba
 sh "<skill_dir>/scripts/bot.sh" triage dispatch --bot-id <bot-id> [--watch --interval-seconds <seconds>]
 ```
 
+派发前先排除派发方自身：优先 `HERDR_PANE_ID`，其次本项目 `state/pane.pid`（用 `herdr pane process-info` 核对 PID），再叠加 `triage.dispatch.exclude_panes`；只选 `claude`、`codex`、`pi` 的 idle pane，shell/unknown 跳过。`allow_pane_labels` 非空时只匹配 label、terminal title 或 pane_id。若只剩自身 pane，保持 `pending` 并写 `only the dispatching pane is available`，不得自派自答。
+
 `triage prepare` 只从 `events.jsonl` 生成尚未入批的事件；认证失效退出 6、部分失败退出 5、health 缺失或损坏退出 5，均不建批。达到 `triage.max_batch_events`（含恰好达到）立即切批，未达到时等 `triage.batch_interval_seconds`；`--force` 只用于受控验证。`triage_trigger=manual` 时批次保持 `pending`，由人或协调者认领；`herdr_batch` 由 `triage dispatch` 按 `triage.dispatch` 配置解析 workspace label + cwd，只选择 `agent_status=idle` 的 Agent pane，忙则保持 `pending` 并记录原因。派发前先用现有 `claim` 占批次；同一批次重复调用不重复发送，`pane run` 的 0 退出不算送达，必须等到 Agent 写出完整结果文件并通过 `apply` 校验；超时记录缺失事件，只对缺失事件发一次补救提示，不重发整批，也不写“已分诊”。没有配置、Herdr 不可用、没有 idle pane 时都保持 `pending`。prepare/claim/apply/dispose 共用 `state/triage/lock`，并发操作返回 4；`ready.jsonl` 缺失时 prepare 会补发。
 
 `triage apply` 校验事件覆盖、六类语义分类、`source`、urgency、同 `event_id + triage_policy_version` 唯一、同批 `triage_id` 唯一，以及纠正必须 `supersedes` 当前有效结论；`correction_of_delivered_work` 必须是高优先级；批次 `done` 后只接受 supersede 纠正。结果整批原子追加；中途失败后原输入可幂等续跑，已存在且内容一致的结论会跳过。`triage report` 默认只用 `source=agent` 的结论，启发式结果必须用 `--source heuristic` 单独渲染，不混在同一份报告；按需返工/需人决策/需确认契约范围/已回答知会/仅知会/待补上下文分组，每组默认 5 项、总计 40 行；面板顶部只给高优先级总数和分组分布，每个事件只在所属分组出现一次，组头标“其中 N 项标 [高]”，截断时保留分组计数与完整报告路径；无结果且批次未完成时显示 `TRIAGE_PENDING`，空事件静默。结果必须带 `author`（缺失写 `unknown`），`evidence_refs`/`uncertainties` 必须是 JSON 数组；渲染时剥离 `<!-- mention:... -->`，只保留 `@姓名`。`dispositions.jsonl` 记录后续处置，不修改原事件或原结论。
